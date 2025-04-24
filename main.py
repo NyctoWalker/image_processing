@@ -9,107 +9,118 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QAction
 import cv2
 import numpy as np
+from dialogs import KernelDialog
 
 
-class KernelDialog(QDialog):
-    def __init__(self, size=3, kernel=None, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Настройка ядра свертки")
-        self.size = size
-        self.kernel = kernel if kernel is not None else np.zeros((size, size))
-
-        self.init_ui()
-
-    def init_ui(self):
-        layout = QVBoxLayout(self)
-
-        # Таблица для ввода ядра
-        self.table = QTableWidget(self.size, self.size)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-
-        # Заполняем таблицу значениями
-        for i in range(self.size):
-            for j in range(self.size):
-                item = QTableWidgetItem(str(self.kernel[i, j]))
-                self.table.setItem(i, j, item)
-
-        layout.addWidget(self.table)
-
-        # Кнопки
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def get_kernel(self):
-        # Считываем значения из таблицы
-        for i in range(self.size):
-            for j in range(self.size):
-                try:
-                    text = self.table.item(i, j).text()
-                    text = text.replace(',', '.')
-                    value = float(text)
-                    self.kernel[i, j] = value
-                except (ValueError, AttributeError):
-                    self.kernel[i, j] = 0.0
-        return self.kernel
+FILTER_DEFINITIONS = {
+    "HSB Adjustment": {
+        "has_params": True,
+        "default_params": {"hue": 0, "saturation": 100, "brightness": 100},
+        "display_text": lambda p: f"HSB (H:{p['hue']}°, S:{p['saturation']}%, B:{p['brightness']}%)",
+        "dialog_sliders": [
+            {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "value_label": lambda v: f"{v}°"},
+            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"},
+            {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"}
+        ]
+    },
+    "Brightness": {
+        "has_params": True,
+        "default_params": {"value": 0},
+        "display_text": lambda p: f"Brightness ({p['value']})",
+        "dialog_sliders": [
+            {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "value_label": lambda v: str(v)}
+        ]
+    },
+    "Invert": {
+        "has_params": False,
+        "display_text": lambda p: "Invert"
+    },
+    "Blur": {
+        "has_params": True,
+        "default_params": {"size": 15},
+        "display_text": lambda p: f"Blur (size: {p['size']})",
+        "dialog_sliders": [
+            {"label": "Размер ядра:", "key": "size", "min": 1, "max": 31,
+             "value_label": lambda v: str(v), "odd_only": True}
+        ]
+    },
+    "Edge Detection": {
+        "has_params": True,
+        "default_params": {"threshold1": 100, "threshold2": 200},
+        "display_text": lambda p: f"Edge Detection ({p['threshold1']}-{p['threshold2']})",
+        "dialog_sliders": [
+            {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "value_label": lambda v: str(v)},
+            {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 500, "value_label": lambda v: str(v)}
+        ]
+    },
+    "Sepia": {
+        "has_params": False,
+        "display_text": lambda p: "Sepia"
+    },
+    "Custom Kernel": {
+        "has_params": True,
+        "default_params": {
+            "kernel_size": 3,
+            "kernel": np.array([
+                [0, -1, 0],
+                [-1, 5, -1],
+                [0, -1, 0]
+            ])
+        },
+        "display_text": lambda p: f"Custom Kernel ({p['kernel'].shape[0]}x{p['kernel'].shape[0]})",
+        "custom_dialog": True
+    }
+}
 
 
 class FilterDialog(QDialog):
     def __init__(self, filter_name, params=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Настройка {filter_name}")
         self.filter_name = filter_name
-        self.params = params or {}
-        self.value_label = None
+        self.filter_def = FILTER_DEFINITIONS[filter_name]
+        self.params = params if params is not None else self.filter_def.get("default_params", {}).copy()
 
+        self.setWindowTitle(f"Настройка {filter_name}")
         self.init_ui()
 
     def init_ui(self):
         layout = QFormLayout(self)
 
-        if self.filter_name == "Brightness":
-            self.slider = QSlider(Qt.Orientation.Horizontal)
-            self.slider.setRange(-100, 100)
-            self.slider.setValue(self.params.get('value', 0))
-            self.value_label = QLabel(str(self.slider.value()))
-            self.slider.valueChanged.connect(self.update_brightness_label)
-            layout.addRow("Яркость:", self.slider)
-            layout.addRow("Значение:", self.value_label)
+        if self.filter_def.get("custom_dialog", False):
+            self.init_custom_dialog(layout)
+        elif self.filter_def["has_params"]:
+            self.init_sliders(layout)
 
-        elif self.filter_name == "Contrast":
-            self.slider = QSlider(Qt.Orientation.Horizontal)
-            self.slider.setRange(0, 300)
-            self.slider.setValue(int(self.params.get('value', 1.0) * 100))
-            self.value_label = QLabel(f"{self.slider.value() / 100:.2f}")
-            self.slider.valueChanged.connect(self.update_contrast_label)
-            layout.addRow("Контраст:", self.slider)
-            layout.addRow("Значение:", self.value_label)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
-        elif self.filter_name == "Blur":
-            self.slider = QSlider(Qt.Orientation.Horizontal)
-            self.slider.setRange(1, 31)
-            self.slider.setValue(self.params.get('size', 15))
-            self.slider.setTickInterval(2)
+    def init_sliders(self, layout):
+        self.sliders = {}
+        for slider_def in self.filter_def["dialog_sliders"]:
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(slider_def["min"], slider_def["max"])
 
-            self.value_label = QLabel(f"{self.slider.value()}")
-            self.slider.valueChanged.connect(self.on_slider_value_changed)
-            layout.addRow("Размер ядра:", self.slider)
-            layout.addRow("Значение:", self.value_label)
+            value = self.params.get(slider_def["key"], 0)
+            if "scale" in slider_def:
+                value = int(value * slider_def["scale"])
+            slider.setValue(value)
+            value_label = QLabel(slider_def["value_label"](slider.value()))
 
-        elif self.filter_name == "Edge Detection":
-            self.threshold1 = QSlider(Qt.Orientation.Horizontal)
-            self.threshold1.setRange(0, 500)
-            self.threshold1.setValue(self.params.get('threshold1', 100))
-            layout.addRow("Порог 1:", self.threshold1)
+            if slider_def.get("odd_only", False):
+                slider.valueChanged.connect(lambda v, s=slider, l=value_label, d=slider_def:
+                                            self.handle_odd_slider(v, s, l, d))
+            else:
+                slider.valueChanged.connect(lambda v, l=value_label, d=slider_def:
+                                            l.setText(d["value_label"](v)))
 
-            self.threshold2 = QSlider(Qt.Orientation.Horizontal)
-            self.threshold2.setRange(0, 500)
-            self.threshold2.setValue(self.params.get('threshold2', 200))
-            layout.addRow("Порог 2:", self.threshold2)
+            layout.addRow(slider_def["label"], slider)
+            layout.addRow("Значение:", value_label)
+            self.sliders[slider_def["key"]] = slider
 
-        elif self.filter_name == "Custom Kernel":
+    def init_custom_dialog(self, layout):
+        if self.filter_name == "Custom Kernel":
             self.kernel_size = self.params.get('kernel_size', 3)
             self.kernel = self.params.get('kernel', np.array([
                 [0, -1, 0],
@@ -125,57 +136,71 @@ class FilterDialog(QDialog):
             self.kernel_button.clicked.connect(self.edit_kernel)
             layout.addRow(self.kernel_button)
 
-        # Для Sepia и Invert не добавляем никаких элементов управления
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def on_slider_value_changed(self, value):
+    def handle_odd_slider(self, value, slider, label, slider_def):
         if value % 2 == 0:
-            value = value + 1 if value < self.slider.maximum() else value - 1
-            self.slider.setValue(value)
-        self.value_label.setText(str(value))
-
-    def update_brightness_label(self, value):
-        self.value_label.setText(str(value))
-
-    def update_contrast_label(self, value):
-        self.value_label.setText(f"{value / 100:.2f}")
+            value = value + 1 if value < slider.maximum() else value - 1
+            slider.setValue(value)
+        label.setText(slider_def["value_label"](value))
 
     def change_kernel_size(self):
-        size, ok = QInputDialog.getInt(
-            self, "Размер ядра", "Введите размер ядра (3, 5, 7):",
-            self.kernel_size, 3, 7, 2
+        current_size = self.kernel_size
+        new_size, ok = QInputDialog.getInt(
+            self, "Размер ядра", "Введите размер ядра (нечетное число 3-15):",
+            current_size, 3, 15, 2
         )
-        if ok:
-            self.kernel_size = size
+
+        if ok and new_size % 2 == 1:
+            current_kernel = self.params.get('kernel', None)
+            new_kernel = np.zeros((new_size, new_size))
+
+            if current_kernel is not None:
+                min_size = min(current_kernel.shape[0], new_size)
+                for i in range(min_size):
+                    for j in range(min_size):
+                        new_kernel[i, j] = current_kernel[i, j]
+            else:
+                center = new_size // 2
+                new_kernel[center, center] = 1.0
+
+            self.kernel_size = new_size
+            self.params['kernel'] = new_kernel
+            self.params['kernel_size'] = new_size
+
+        elif ok:
+            QMessageBox.warning(self, "Ошибка", "Размер ядра должен быть нечетным числом")
 
     def edit_kernel(self):
-        current_kernel = self.params.get('kernel', np.zeros((self.kernel_size, self.kernel_size)))
+        self.kernel_size = self.params.get('kernel_size', 3)
+
+        current_kernel = self.params.get('kernel', None)
+        if current_kernel is None or current_kernel.shape[0] != self.kernel_size:
+            current_kernel = np.zeros((self.kernel_size, self.kernel_size))
+            if self.kernel_size % 2 == 1:
+                center = self.kernel_size // 2
+                current_kernel[center, center] = 1.0
+            self.params['kernel'] = current_kernel
+
         dialog = KernelDialog(self.kernel_size, current_kernel, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.params['kernel'] = dialog.get_kernel()
+            self.params['kernel_size'] = self.kernel_size
 
     def get_params(self):
-        if self.filter_name == "Brightness":
-            return {'value': self.slider.value()}
-        elif self.filter_name == "Contrast":
-            return {'value': self.slider.value() / 100}
-        elif self.filter_name == "Blur":
-            return {'size': self.slider.value()}
-        elif self.filter_name == "Edge Detection":
-            return {
-                'threshold1': self.threshold1.value(),
-                'threshold2': self.threshold2.value()
-            }
-        elif self.filter_name == "Custom Kernel":
+        if self.filter_def.get("custom_dialog", False):
             return {
                 'kernel_size': self.kernel_size,
-                'kernel': self.kernel
+                'kernel': self.params['kernel']
             }
-        return {}
+
+        params = {}
+        for slider_def in self.filter_def["dialog_sliders"]:
+            key = slider_def["key"]
+            value = self.sliders[key].value()
+            if "scale" in slider_def:
+                value = value / slider_def["scale"]
+            params[key] = value
+
+        return params
 
 
 class FilterApp(QMainWindow):
@@ -209,8 +234,8 @@ class FilterApp(QMainWindow):
         # Список доступных фильтров
         self.available_filters = QListWidget()
         self.available_filters.addItems([
-            "Brightness", "Contrast", "Invert", "Blur",
-            "Edge Detection", "Sepia", "Custom Kernel"
+            "HSB Adjustment", "Brightness", "Blur", "Edge Detection",
+            "Invert", "Sepia", "Custom Kernel"
         ])
         self.available_filters.itemDoubleClicked.connect(self.add_filter)
         left_panel.addWidget(QLabel("Доступные фильтры (двойной клик для добавления):"))
@@ -227,10 +252,6 @@ class FilterApp(QMainWindow):
         self.remove_button = QPushButton("Удалить выбранный фильтр")
         self.remove_button.clicked.connect(self.remove_selected_filter)
         left_panel.addWidget(self.remove_button)
-
-        self.apply_button = QPushButton("Применить фильтры")
-        self.apply_button.clicked.connect(self.apply_filters)
-        left_panel.addWidget(self.apply_button)
 
         # Правая панель
         right_panel = QVBoxLayout()
@@ -279,9 +300,9 @@ class FilterApp(QMainWindow):
 
     def add_filter(self, item):
         filter_name = item.text()
+        filter_def = FILTER_DEFINITIONS[filter_name]
 
-        # Для фильтров без параметров сразу добавляем
-        if filter_name in ["Invert", "Sepia"]:
+        if not filter_def["has_params"]:
             self.filters.append({'name': filter_name, 'params': {}})
             self.update_filters_list()
             self.update_display()
@@ -297,12 +318,12 @@ class FilterApp(QMainWindow):
     def edit_filter(self, item):
         index = self.active_filters.row(item)
         filter_data = self.filters[index]
+        filter_name = filter_data['name']
 
-        # Для фильтров без параметров ничего не делаем
-        if filter_data['name'] in ["Invert", "Sepia"]:
+        if not FILTER_DEFINITIONS[filter_name]["has_params"]:
             return
 
-        dialog = FilterDialog(filter_data['name'], filter_data['params'], self)
+        dialog = FilterDialog(filter_name, filter_data['params'], self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.filters[index]['params'] = dialog.get_params()
             self.update_filters_list()
@@ -320,22 +341,8 @@ class FilterApp(QMainWindow):
         for filter_data in self.filters:
             name = filter_data['name']
             params = filter_data['params']
-
-            if name == "Brightness":
-                text = f"{name} ({params.get('value', 0)})"
-            elif name == "Contrast":
-                text = f"{name} (x{params.get('value', 1.0):.1f})"
-            elif name == "Blur":
-                text = f"{name} (size: {params.get('size', 5)})"
-            elif name == "Edge Detection":
-                text = f"{name} ({params.get('threshold1', 100)}-{params.get('threshold2', 200)})"
-            elif name == "Custom Kernel":
-                size = params.get('kernel', np.zeros((3, 3))).shape[0]
-                text = f"{name} ({size}x{size})"
-            else:
-                text = name
-
-            self.active_filters.addItem(text)
+            display_text = FILTER_DEFINITIONS[name]["display_text"](params)
+            self.active_filters.addItem(display_text)
 
     def update_display(self):
         if self.image is None:
@@ -349,19 +356,27 @@ class FilterApp(QMainWindow):
                 filter_data['params']
             )
 
-        h, w, ch = self.filtered_image.shape
+        self.show_image(self.filtered_image)
+
+    def show_image(self, image):
+        h, w, ch = image.shape
         bytes_per_line = ch * w
-        q_img = QImage(self.filtered_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        q_img = QImage(image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         self.image_label.setPixmap(QPixmap.fromImage(q_img).scaled(
             self.image_label.width(), self.image_label.height(),
             Qt.AspectRatioMode.KeepAspectRatio
         ))
 
     def apply_single_filter(self, img, filter_name, params):
+        if filter_name == "HSB Adjustment":
+            return self.apply_hsb_adjustment(
+                img,
+                params.get('hue', 0),
+                params.get('saturation', 100),
+                params.get('brightness', 100)
+            )
         if filter_name == "Brightness":
             return self.adjust_brightness(img, params.get('value', 0))
-        elif filter_name == "Contrast":
-            return self.adjust_contrast(img, params.get('value', 1.0))
         elif filter_name == "Invert":
             return cv2.bitwise_not(img)
         elif filter_name == "Blur":
@@ -379,17 +394,25 @@ class FilterApp(QMainWindow):
                 [-1, 5, -1],
                 [0, -1, 0]
             ]))
-            return cv2.filter2D(img, -1, kernel)
+            if kernel.shape[0] == kernel.shape[1] and kernel.shape[0] % 2 == 1:
+                return cv2.filter2D(img, -1, kernel)
+            else:
+                QMessageBox.warning(self, "Ошибка",
+                                    "Ядро должно быть квадратным с нечетными размерами")
+                return img
         return img
 
-    def apply_filters(self):
-        self.update_display()
+    def apply_hsb_adjustment(self, img, hue, saturation, brightness):
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')  # HSV
+
+        hsv[..., 0] = (hsv[..., 0] + (hue / 2)) % 180  # H
+        hsv[..., 1] = np.clip(hsv[..., 1] * (saturation / 100), 0, 255)  # S
+        hsv[..., 2] = np.clip(hsv[..., 2] * (brightness / 100), 0, 255)  # V
+
+        return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)  # RGB
 
     def adjust_brightness(self, img, value):
         return np.clip(img.astype('int32') + value, 0, 255).astype('uint8')
-
-    def adjust_contrast(self, img, value):
-        return np.clip(img.astype('float') * value, 0, 255).astype('uint8')
 
     def apply_sepia(self, img):
         sepia_filter = np.array([
