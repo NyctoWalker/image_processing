@@ -1,19 +1,22 @@
 import sys
+import json
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox,
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar, QListWidgetItem
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QSettings
 from PyQt6.QtGui import QImage, QPixmap, QAction
 import cv2
 import numpy as np
+import time
+
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
     pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither
-import time
 
 
 FILTER_DEFINITIONS = {
@@ -268,6 +271,9 @@ class FilterDialog(QDialog):
 
 
 class FilterApp(QMainWindow):
+    PRESETS_FILE = "presets.json"
+    PRESETS_SORT_ORDER = "alphabetical"  # "alphabetical", "addition"
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Обработчик изображений")
@@ -284,6 +290,11 @@ class FilterApp(QMainWindow):
 
         self.init_ui()
 
+        self.presets = {}
+        self.load_presets()
+        self.init_preset_ui()
+
+# region UI
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -343,31 +354,183 @@ class FilterApp(QMainWindow):
         self.addToolBar(toolbar)
 
         # Зум
-        self.zoom_in_action = QAction("Zoom In", self)
+        self.zoom_in_action = QAction("Приблизить", self)
         self.zoom_in_action.triggered.connect(self.image_viewer.zoom_in)
         toolbar.addAction(self.zoom_in_action)
 
-        self.zoom_out_action = QAction("Zoom Out", self)
+        self.zoom_out_action = QAction("Отдалить", self)
         self.zoom_out_action.triggered.connect(self.image_viewer.zoom_out)
         toolbar.addAction(self.zoom_out_action)
 
-        self.fit_to_window_action = QAction("Fit to Window", self)
+        self.fit_to_window_action = QAction("Растянуть", self)
         self.fit_to_window_action.triggered.connect(lambda: self.image_viewer.set_fit_to_window(True))
         self.fit_to_window_action.setCheckable(True)
         self.fit_to_window_action.setChecked(True)
         toolbar.addAction(self.fit_to_window_action)
 
-        self.actual_size_action = QAction("Actual Size", self)
+        self.actual_size_action = QAction("Реальный размер(пикс.)", self)
         self.actual_size_action.triggered.connect(self.image_viewer.set_actual_size)
         toolbar.addAction(self.actual_size_action)
 
-    def filters_reordered(self, parent, start, end, destination, row):
-        item = self.filters.pop(start)
-        if row > start:
-            row -= 1  # Корректируем индекс, если перемещаем вниз
-        self.filters.insert(row, item)
+    def init_preset_ui(self):
+        left_panel = self.centralWidget().layout().itemAt(0).layout()
+
+        preset_group = QGroupBox("Шаблоны фильтров")
+        preset_layout = QVBoxLayout()
+
+        sort_layout = QHBoxLayout()
+        sort_layout.addWidget(QLabel("Сортировка:"))
+        self.sort_order_combo = QComboBox()
+        self.sort_order_combo.addItems(["По алфавиту", "По порядку добавления"])
+        self.sort_order_combo.setCurrentText(
+            "По алфавиту" if self.PRESETS_SORT_ORDER == "alphabetical" else "По порядку добавления")
+        self.sort_order_combo.currentTextChanged.connect(self.update_preset_combo)
+        sort_layout.addWidget(self.sort_order_combo)
+        preset_layout.addLayout(sort_layout)
+
+        self.preset_combo = QComboBox()
+        preset_layout.addWidget(self.preset_combo)
+
+        self.preset_name_edit = QLineEdit()
+        self.preset_name_edit.setPlaceholderText("Название шаблона")
+        preset_layout.addWidget(self.preset_name_edit)
+
+        btn_layout = QHBoxLayout()
+        self.save_preset_btn = QPushButton("Сохранить")
+        self.save_preset_btn.clicked.connect(self.save_current_preset)
+        btn_layout.addWidget(self.save_preset_btn)
+
+        self.load_preset_btn = QPushButton("Загрузить")
+        self.load_preset_btn.clicked.connect(self.load_selected_preset)
+        btn_layout.addWidget(self.load_preset_btn)
+
+        self.delete_preset_btn = QPushButton("Удалить")
+        self.delete_preset_btn.clicked.connect(self.delete_selected_preset)
+        btn_layout.addWidget(self.delete_preset_btn)
+
+        preset_layout.addLayout(btn_layout)
+        preset_group.setLayout(preset_layout)
+
+        left_panel.insertWidget(5, preset_group)
+        self.update_preset_combo()
+# endregion
+
+# region presets
+    def save_current_preset(self):
+        name = self.preset_name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, введите название шаблона")
+            return
+
+        self.presets[name] = {
+            "filters": [f.copy() for f in self.filters],
+            "created_at": time.time()
+        }
+        self.save_presets()
+        self.update_preset_combo()
+        self.preset_name_edit.clear()
+
+    def update_preset_combo(self):
+        self.preset_combo.clear()
+
+        sort_order = self.sort_order_combo.currentText()
+
+        if sort_order == "По алфавиту":
+            items = sorted(self.presets.keys())
+        else:  # "По порядку добавления"
+            items = sorted(self.presets.keys(),
+                           key=lambda x: self.presets[x].get("created_at", 0))
+
+        self.preset_combo.addItems(items)
+
+    def save_presets(self):
+        presets_to_save = {
+            "_metadata": {
+                "sort_order": self.sort_order_combo.currentText(),
+                "version": 1
+            },
+            "presets": {}
+        }
+
+        for name, data in self.presets.items():
+            serialized_filters = []
+            for f in data["filters"]:
+                serialized = f.copy()
+                if 'kernel' in serialized['params']:
+                    serialized['params']['kernel'] = serialized['params']['kernel'].tolist()
+                serialized_filters.append(serialized)
+
+            presets_to_save["presets"][name] = {
+                "filters": serialized_filters,
+                "created_at": data.get("created_at", time.time())
+            }
+
+        try:
+            with open(self.PRESETS_FILE, "w", encoding="utf-8") as f:
+                json.dump(presets_to_save, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось сохранить шаблоны: {str(e)}")
+
+    def load_presets(self):
+        try:
+            if not Path(self.PRESETS_FILE).exists():
+                self.presets = {}
+                return
+
+            with open(self.PRESETS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if "_metadata" in data and "sort_order" in data["_metadata"]:
+                sort_text = data["_metadata"]["sort_order"]
+                if sort_text == "По порядку добавления":
+                    self.PRESETS_SORT_ORDER = "addition"
+                else:
+                    self.PRESETS_SORT_ORDER = "alphabetical"
+
+            self.presets = {}
+            for name, preset_data in data.get("presets", {}).items():
+                deserialized_filters = []
+                for f in preset_data["filters"]:
+                    deserialized = f.copy()
+                    if 'kernel' in deserialized['params']:
+                        deserialized['params']['kernel'] = np.array(deserialized['params']['kernel'])
+                    deserialized_filters.append(deserialized)
+
+                self.presets[name] = {
+                    "filters": deserialized_filters,
+                    "created_at": preset_data.get("created_at", time.time())
+                }
+
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось загрузить шаблоны: {str(e)}")
+            self.presets = {}
+
+    def load_selected_preset(self):
+        name = self.preset_combo.currentText()
+        if not name or name not in self.presets:
+            return
+
+        self.filters = [f.copy() for f in self.presets[name]["filters"]]
+        self.update_filters_list()
         self.update_display()
 
+    def delete_selected_preset(self):
+        name = self.preset_combo.currentText()
+        if not name or name not in self.presets:
+            return
+
+        reply = QMessageBox.question(
+            self, "Удаление шаблона", f"Вы действительно хотите удалить '{name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            del self.presets[name]
+            self.save_presets()
+            self.update_preset_combo()
+# endregion
+
+# region save/load
     def load_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Открыть изображение", "",
@@ -394,7 +557,9 @@ class FilterApp(QMainWindow):
         )
         if file_path and not cv2.imwrite(file_path, cv2.cvtColor(self.filtered_image, cv2.COLOR_RGB2BGR)):
             QMessageBox.warning(self, "Ошибка", "Не удалось сохранить изображение!")
+# endregion
 
+# region filters crud
     def add_filter(self, item):
         filter_name = item.text()
         filter_def = FILTER_DEFINITIONS[filter_name]
@@ -439,21 +604,6 @@ class FilterApp(QMainWindow):
             self.preview_mode = False
             self.update_display()
 
-    def handle_preview_request(self, filter_name, params, filter_index=None):
-        try:
-            if params is None:
-                self.preview_mode = False
-                self.preview_filter_params = None
-            else:
-                self.preview_mode = True
-                self.preview_filter_name = filter_name
-                self.preview_filter_params = params.copy()
-                self.preview_filter_index = filter_index if filter_index is not None else -1
-
-            self.update_display()
-        except Exception as e:
-            print(f"Error handling preview: {e}")
-
     def remove_selected_filter(self):
         current_row = self.active_filters.currentRow()
         if current_row >= 0:
@@ -466,6 +616,31 @@ class FilterApp(QMainWindow):
             self.update_filters_list()
             self.update_display()
 
+    def filters_reordered(self, parent, start, end, destination, row):
+        item = self.filters.pop(start)
+        if row > start:
+            row -= 1  # Корректируем индекс, если перемещаем вниз
+        self.filters.insert(row, item)
+        self.update_display()
+
+    def update_filters_list(self):
+        self.active_filters.clear()
+        for i, filter_data in enumerate(self.filters):
+            name = filter_data['name']
+            params = filter_data['params']
+            display_text = FILTER_DEFINITIONS[name]["display_text"](params)
+
+            item = QListWidgetItem(self.active_filters)
+            widget = FilterListItem(display_text)
+            widget.set_checked(filter_data.get('visible', True))
+            widget.checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_filter_visibility(idx, state))
+
+            item.setSizeHint(widget.sizeHint())
+            self.active_filters.addItem(item)
+            self.active_filters.setItemWidget(item, widget)
+# endregion
+
+# region visibility
     def toggle_filter_visibility(self, index, state):
         if 0 <= index < len(self.filters):
             self.filters[index]['visible'] = (state == Qt.CheckState.Checked.value)
@@ -487,22 +662,23 @@ class FilterApp(QMainWindow):
                     widget.set_checked(new_state)
 
         self.update_display()
+# endregion
 
-    def update_filters_list(self):
-        self.active_filters.clear()
-        for i, filter_data in enumerate(self.filters):
-            name = filter_data['name']
-            params = filter_data['params']
-            display_text = FILTER_DEFINITIONS[name]["display_text"](params)
+# region display
+    def handle_preview_request(self, filter_name, params, filter_index=None):
+        try:
+            if params is None:
+                self.preview_mode = False
+                self.preview_filter_params = None
+            else:
+                self.preview_mode = True
+                self.preview_filter_name = filter_name
+                self.preview_filter_params = params.copy()
+                self.preview_filter_index = filter_index if filter_index is not None else -1
 
-            item = QListWidgetItem(self.active_filters)
-            widget = FilterListItem(display_text)
-            widget.set_checked(filter_data.get('visible', True))
-            widget.checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_filter_visibility(idx, state))
-
-            item.setSizeHint(widget.sizeHint())
-            self.active_filters.addItem(item)
-            self.active_filters.setItemWidget(item, widget)
+            self.update_display()
+        except Exception as e:
+            print(f"Error handling preview: {e}")
 
     def update_display(self):
         if self.image is None:
@@ -631,6 +807,7 @@ class FilterApp(QMainWindow):
     def resizeEvent(self, event):
         self.update_display()
         super().resizeEvent(event)
+    # endregion
 
 
 class FilterListItem(QWidget):

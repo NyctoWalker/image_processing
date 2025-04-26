@@ -1,0 +1,96 @@
+{
+  "_metadata": {
+    "sort_order": "По алфавиту",
+    "version": 1
+  },
+  "presets": {
+    "Пустой": {
+      "filters": [],
+      "created_at": 1745694091.6089191
+    },
+    "Sepia+invert": {
+      "filters": [
+        {
+          "name": "Sepia",
+          "params": {},
+          "visible": true
+        },
+        {
+          "name": "Invert",
+          "params": {},
+          "visible": true
+        }
+      ],
+      "created_at": 1745694116.1178977
+    },
+    "Тиснение": {
+      "filters": [
+        {
+          "name": "Blur",
+          "params": {
+            "size": 3
+          },
+          "visible": true
+        },
+        {
+          "name": "Custom Kernel",
+          "params": {
+            "kernel_size": 3,
+            "kernel": [
+              [
+                0,
+                -1,
+                0
+              ],
+              [
+                -1,
+                5,
+                -1
+              ],
+              [
+                0,
+                -1,
+                0
+              ]
+            ]
+          },
+          "visible": true
+        },
+        {
+          "name": "Custom Kernel",
+          "params": {
+            "kernel_size": 3,
+            "kernel": [
+              [
+                -1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 200,
+            "brightness": 196
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1745696010.495301
+    }
+  }
+}
