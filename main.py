@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox,
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar
+    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap, QAction
@@ -322,6 +322,10 @@ class FilterApp(QMainWindow):
         self.remove_button.clicked.connect(self.remove_selected_filter)
         left_panel.addWidget(self.remove_button)
 
+        self.toggle_all_button = QPushButton("Переключить все фильтры")
+        self.toggle_all_button.clicked.connect(self.toggle_all_filters)
+        left_panel.addWidget(self.toggle_all_button)
+
         # Правая панель
         right_panel = QVBoxLayout()
 
@@ -396,7 +400,7 @@ class FilterApp(QMainWindow):
         filter_def = FILTER_DEFINITIONS[filter_name]
 
         if not filter_def["has_params"]:
-            self.filters.append({'name': filter_name, 'params': {}})
+            self.filters.append({'name': filter_name, 'params': {}, 'visible': True})
             self.update_filters_list()
             self.update_display()
             return
@@ -408,7 +412,7 @@ class FilterApp(QMainWindow):
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             params = dialog.get_params()
-            self.filters.append({'name': filter_name, 'params': params})
+            self.filters.append({'name': filter_name, 'params': params, 'visible': True})
             self.update_filters_list()
             self.preview_mode = False
             self.update_display()
@@ -453,17 +457,52 @@ class FilterApp(QMainWindow):
     def remove_selected_filter(self):
         current_row = self.active_filters.currentRow()
         if current_row >= 0:
+            if self.preview_mode and self.preview_filter_index == current_row:
+                self.preview_mode = False
+                self.preview_filter_params = None
+
             self.filters.pop(current_row)
+
             self.update_filters_list()
             self.update_display()
 
+    def toggle_filter_visibility(self, index, state):
+        if 0 <= index < len(self.filters):
+            self.filters[index]['visible'] = (state == Qt.CheckState.Checked.value)
+            self.update_display()
+
+    def toggle_all_filters(self):
+        if not self.filters:
+            return
+
+        all_visible = all(f.get('visible', True) for f in self.filters)
+        new_state = not all_visible
+
+        for i in range(len(self.filters)):
+            self.filters[i]['visible'] = new_state
+            item = self.active_filters.item(i)
+            if item:
+                widget = self.active_filters.itemWidget(item)
+                if widget:
+                    widget.set_checked(new_state)
+
+        self.update_display()
+
     def update_filters_list(self):
         self.active_filters.clear()
-        for filter_data in self.filters:
+        for i, filter_data in enumerate(self.filters):
             name = filter_data['name']
             params = filter_data['params']
             display_text = FILTER_DEFINITIONS[name]["display_text"](params)
-            self.active_filters.addItem(display_text)
+
+            item = QListWidgetItem(self.active_filters)
+            widget = FilterListItem(display_text)
+            widget.set_checked(filter_data.get('visible', True))
+            widget.checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_filter_visibility(idx, state))
+
+            item.setSizeHint(widget.sizeHint())
+            self.active_filters.addItem(item)
+            self.active_filters.setItemWidget(item, widget)
 
     def update_display(self):
         if self.image is None:
@@ -473,21 +512,22 @@ class FilterApp(QMainWindow):
         self.filtered_image = self.original_image.copy()
 
         if not self.preview_mode:
-            # Normal mode - apply all filters in order
             for filter_data in self.filters:
-                self.filtered_image = self.apply_single_filter(
-                    self.filtered_image,
-                    filter_data['name'],
-                    filter_data['params']
-                )
-        else:
-            if self.preview_filter_index == -1:
-                for filter_data in self.filters:
+                if filter_data.get('visible', True):
                     self.filtered_image = self.apply_single_filter(
                         self.filtered_image,
                         filter_data['name'],
                         filter_data['params']
                     )
+        else:
+            if self.preview_filter_index == -1:
+                for filter_data in self.filters:
+                    if filter_data.get('visible', True):
+                        self.filtered_image = self.apply_single_filter(
+                            self.filtered_image,
+                            filter_data['name'],
+                            filter_data['params']
+                        )
                 if self.preview_filter_params is not None:
                     self.filtered_image = self.apply_single_filter(
                         self.filtered_image,
@@ -496,7 +536,7 @@ class FilterApp(QMainWindow):
                     )
             else:
                 for i, filter_data in enumerate(self.filters):
-                    if i != self.preview_filter_index:
+                    if i != self.preview_filter_index and filter_data.get('visible', True):
                         self.filtered_image = self.apply_single_filter(
                             self.filtered_image,
                             filter_data['name'],
@@ -591,6 +631,30 @@ class FilterApp(QMainWindow):
     def resizeEvent(self, event):
         self.update_display()
         super().resizeEvent(event)
+
+
+class FilterListItem(QWidget):
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(2, 2, 2, 2)
+
+        self.checkbox = QCheckBox()
+        self.checkbox.setChecked(True)
+        self.label = QLabel(text)
+
+        self.layout.addWidget(self.checkbox)
+        self.layout.addWidget(self.label)
+        self.layout.addStretch()
+
+    def set_text(self, text):
+        self.label.setText(text)
+
+    def is_checked(self):
+        return self.checkbox.isChecked()
+
+    def set_checked(self, state):
+        self.checkbox.setChecked(state)
 
 
 if __name__ == "__main__":
