@@ -143,6 +143,7 @@ class FilterDialog(QDialog):
 
     def on_accept(self):
         self.user_accepted = True
+        self.current_params = self.get_current_params()
         self.accept()
 
     def toggle_preview(self, state):

@@ -80,6 +80,9 @@ class PixelArtDialog(QWidget):
         self.method_slider_connections = []
         self.init_ui()
 
+        self.pixel_size_slider["slider"].valueChanged.connect(self.emit_preview)
+        self.method_combo.currentTextChanged.connect(self.handle_method_change)
+
     def init_ui(self):
         layout = QVBoxLayout(self)
 
@@ -237,7 +240,7 @@ class PixelArtDialog(QWidget):
     def emit_preview(self):
         try:
             current_time = time.time()
-            if current_time - self.last_update_time < 0.20:  # ~5 обновлений/сек
+            if current_time - self.last_update_time < 0.33:  # ~3 обновления/сек
                 return
 
             self.last_update_time = current_time
