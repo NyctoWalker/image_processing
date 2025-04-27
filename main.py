@@ -304,6 +304,9 @@ class FilterApp(QMainWindow):
         self.filtered_image = None
         self.filters = []  # Список словарей: {'name': str, 'params': dict}
 
+        self.cache = []
+        self.dirty_flags = []
+
         self.preview_mode = False
         self.preview_filter_index = -1
         self.preview_filter_params = {}
@@ -531,9 +534,23 @@ class FilterApp(QMainWindow):
         if not name or name not in self.presets:
             return
 
+        was_in_preview = self.preview_mode
+        preview_index = self.preview_filter_index if was_in_preview else -1
+
         self.filters = [f.copy() for f in self.presets[name]["filters"]]
+
+        self.cache = []
+        self.dirty_flags = [True] * len(self.filters)
+
         self.update_filters_list()
+
+        self.preview_mode = False
         self.update_display()
+
+        if was_in_preview and preview_index < len(self.filters):
+            self.preview_mode = True
+            self.preview_filter_index = preview_index
+            self.update_display()
 
     def delete_selected_preset(self):
         name = self.preset_combo.currentText()
@@ -551,6 +568,24 @@ class FilterApp(QMainWindow):
             self.update_preset_combo()
 # endregion
 
+# region caching flags
+    def mark_dirty_from(self, index):
+        for i in range(index, len(self.dirty_flags)):
+            self.dirty_flags[i] = True
+
+    def update_cache_and_dirty_flags(self):
+        current_count = len(self.filters)
+        while len(self.cache) < current_count:
+            self.cache.append(None)
+        while len(self.cache) > current_count:
+            self.cache.pop()
+
+        while len(self.dirty_flags) < current_count:
+            self.dirty_flags.append(True)
+        while len(self.dirty_flags) > current_count:
+            self.dirty_flags.pop()
+# endregion
+
 # region save/load
     def load_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -562,6 +597,10 @@ class FilterApp(QMainWindow):
             if self.image is not None:
                 self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
                 self.original_image = self.image.copy()
+
+                self.cache.clear()
+                self.dirty_flags = [True] * len(self.filters)
+
                 self.preview_mode = False
                 self.preview_filter_params = None
                 self.show_image(self.filtered_image)
@@ -589,23 +628,33 @@ class FilterApp(QMainWindow):
 
         if not filter_def["has_params"]:
             self.filters.append({'name': filter_name, 'params': {}, 'visible': True})
+            self.update_cache_and_dirty_flags()
+            self.mark_dirty_from(len(self.filters) - 1)
             self.update_filters_list()
             self.update_display()
             return
 
         was_in_preview = self.preview_mode
+        preview_index = self.preview_filter_index if was_in_preview else -1
 
         dialog = FilterDialog(filter_name, parent=self)
-        dialog.preview_requested.connect(self.handle_preview_request)
+        dialog.preview_requested.connect(
+            lambda name, params, idx=len(self.filters):
+            self.handle_preview_request(name, params, idx)
+        )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             params = dialog.get_params()
             self.filters.append({'name': filter_name, 'params': params, 'visible': True})
+            self.update_cache_and_dirty_flags()
+            self.mark_dirty_from(len(self.filters) - 1)
             self.update_filters_list()
             self.preview_mode = False
             self.update_display()
         else:
-            self.preview_mode = was_in_preview
+            if was_in_preview:
+                self.preview_mode = True
+                self.preview_filter_index = preview_index
             self.update_display()
 
     def edit_filter(self, item):
@@ -621,6 +670,8 @@ class FilterApp(QMainWindow):
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.filters[index]['params'] = dialog.get_params()
+            self.mark_dirty_from(index)
+
             self.update_filters_list()
             self.update_display()
         else:
@@ -637,6 +688,10 @@ class FilterApp(QMainWindow):
             self.filters.pop(current_row)
             self.preview_mode = False
             self.preview_filter_params = None
+
+            self.update_cache_and_dirty_flags()
+            self.mark_dirty_from(current_row)
+
             self.update_filters_list()
             self.update_display()
 
@@ -645,6 +700,8 @@ class FilterApp(QMainWindow):
         if row > start:
             row -= 1  # Корректируем индекс, если перемещаем вниз
         self.filters.insert(row, item)
+        self.dirty_flags = [True] * len(self.filters)
+
         self.update_display()
 
     def update_filters_list(self):
@@ -668,6 +725,7 @@ class FilterApp(QMainWindow):
     def toggle_filter_visibility(self, index, state):
         if 0 <= index < len(self.filters):
             self.filters[index]['visible'] = (state == Qt.CheckState.Checked.value)
+            self.mark_dirty_from(index)
             self.update_display()
 
     def toggle_all_filters(self):
@@ -709,30 +767,57 @@ class FilterApp(QMainWindow):
         if self.image is None:
             return
 
+        self.update_cache_and_dirty_flags()
+
         try:
             view_state = self.image_viewer.get_viewport_state()
-            self.filtered_image = self.original_image.copy()
-            for i, filter_data in enumerate(self.filters):
-                if not filter_data.get('visible', True):
+            current_image = self.original_image.copy()
+
+            try:
+                start_index = next(i for i, dirty in enumerate(self.dirty_flags) if dirty)
+            except StopIteration:
+                start_index = len(self.filters)
+
+            if start_index > 0:
+                current_image = self.cache[start_index - 1].copy()
+
+            for i in range(start_index, len(self.filters)):
+                if not self.dirty_flags[i]:
+                    current_image = self.cache[i].copy()
                     continue
 
-                if self.preview_mode and i == self.preview_filter_index:
-                    continue
+                if self.filters[i]['visible']:
+                    current_image = self.apply_single_filter(
+                        current_image,
+                        self.filters[i]['name'],
+                        self.filters[i]['params']
+                    )
 
-                self.filtered_image = self.apply_single_filter(
-                    self.filtered_image,
-                    filter_data['name'],
-                    filter_data['params']
-                )
+                self.cache[i] = current_image.copy()
+                self.dirty_flags[i] = False
 
-            if self.preview_mode and self.preview_filter_params is not None:
-                self.filtered_image = self.apply_single_filter(
-                    self.filtered_image,
+            if self.preview_mode and self.preview_filter_params and self.preview_filter_index != -1:
+                preview_base = self.original_image.copy()
+                if self.preview_filter_index > 0 and self.cache:
+                    preview_base = self.cache[self.preview_filter_index - 1].copy()
+
+                preview_image = self.apply_single_filter(
+                    preview_base,
                     self.preview_filter_name,
                     self.preview_filter_params
                 )
 
-            self.show_image(self.filtered_image)
+                for i in range(self.preview_filter_index + 1, len(self.filters)):
+                    if self.filters[i]['visible']:
+                        preview_image = self.apply_single_filter(
+                            preview_image,
+                            self.filters[i]['name'],
+                            self.filters[i]['params']
+                        )
+
+                current_image = preview_image
+
+            self.show_image(current_image)
             self.image_viewer.set_viewport_state(view_state)
         except Exception as e:
             print(f"Error updating display: {e}")
