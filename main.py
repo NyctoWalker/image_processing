@@ -16,8 +16,7 @@ import time
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
-    pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither
-
+    pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -49,7 +48,7 @@ FILTER_DEFINITIONS = {
     },
     "Edge Detection": {
         "has_params": True,
-        "default_params": {"threshold1": 100, "threshold2": 200},
+        "default_params": {"threshold1": 100, "threshold2": 250},
         "display_text": lambda p: f"Edge Detection ({p['threshold1']}-{p['threshold2']})",
         "dialog_sliders": [
             {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "value_label": lambda v: str(v)},
@@ -63,6 +62,10 @@ FILTER_DEFINITIONS = {
     "Sepia": {
         "has_params": False,
         "display_text": lambda p: "Sepia"
+    },
+    "Grayscale": {
+        "has_params": False,
+        "display_text": lambda p: "Grayscale"
     },
     "Custom Kernel": {
         "has_params": True,
@@ -111,7 +114,6 @@ class FilterDialog(QDialog):
         super().__init__(parent)
         self.filter_name = filter_name
         self.filter_def = FILTER_DEFINITIONS[filter_name]
-
         self.original_params = params if params is not None else self.filter_def.get("default_params", {}).copy()
         self.current_params = self.original_params.copy()
         self.params = self.current_params
@@ -119,9 +121,11 @@ class FilterDialog(QDialog):
         self.preview_enabled = True
         self.last_update_time = 0
         self.user_accepted = False
+        self.initialized = False
 
         self.setWindowTitle(f"Настройка {filter_name}")
         self.init_ui()
+        self.initialized = True
 
     def init_ui(self):
         layout = QFormLayout(self)
@@ -147,9 +151,17 @@ class FilterDialog(QDialog):
         self.accept()
 
     def toggle_preview(self, state):
-        self.preview_enabled = state == Qt.CheckState.Checked.value
-        if not self.preview_enabled:
-            self.preview_requested.emit(self.filter_name, self.original_params.copy())
+        try:
+            self.preview_enabled = state == Qt.CheckState.Checked.value
+            if not self.preview_enabled:
+                self.preview_checkbox.blockSignals(True)
+                self.preview_checkbox.setChecked(False)
+                self.preview_checkbox.blockSignals(False)
+                self.preview_requested.emit("", {})
+            else:
+                self.on_slider_changed()
+        except Exception as e:
+            print(f"Error in toggle_preview: {e}")
 
     def init_sliders(self, layout):
         self.sliders = {}
@@ -161,7 +173,8 @@ class FilterDialog(QDialog):
             if "scale" in slider_def:
                 value = int(value * slider_def["scale"])
             slider.setValue(value)
-            value_label = QLabel(slider_def["value_label"](slider.value()))
+
+            value_label = QLabel(slider_def["value_label"](value))
 
             slider.valueChanged.connect(lambda v, l=value_label, d=slider_def: l.setText(d["value_label"](v)))
             slider.valueChanged.connect(self.on_slider_changed)
@@ -174,17 +187,24 @@ class FilterDialog(QDialog):
             layout.addRow("Значение:", value_label)
             self.sliders[slider_def["key"]] = slider
 
+        if self.initialized:
+            for key, slider in self.sliders.items():
+                slider.valueChanged.emit(slider.value())
+
     def on_slider_changed(self):
-        if not self.preview_enabled:
+        if not self.preview_enabled or not self.initialized:
             return
 
         current_time = time.time()
-        if current_time - self.last_update_time < 0.10:  # до ~10 обновлений в секунду
+        if current_time - self.last_update_time < 0.10:
             return
 
         self.last_update_time = current_time
         self.current_params = self.get_current_params()
-        self.preview_requested.emit(self.filter_name, self.get_current_params())
+        try:
+            self.preview_requested.emit(self.filter_name, self.current_params.copy())
+        except Exception as e:
+            print(f"Error emitting preview signal: {e}")
 
     def init_custom_dialog(self, layout):
         if self.filter_name == "Custom Kernel":
@@ -316,7 +336,7 @@ class FilterApp(QMainWindow):
         self.available_filters = QListWidget()
         self.available_filters.addItems([
             "HSB Adjustment", "Brightness", "Blur", "Edge Detection",
-            "Invert", "Sepia", "Custom Kernel", "Pixel Art", "Resize"
+            "Invert", "Sepia", "Grayscale", "Custom Kernel", "Pixel Art", "Resize"
         ])
         self.available_filters.itemDoubleClicked.connect(self.add_filter)
         left_panel.addWidget(QLabel("Доступные фильтры (двойной клик для добавления):"))
@@ -542,6 +562,8 @@ class FilterApp(QMainWindow):
             if self.image is not None:
                 self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
                 self.original_image = self.image.copy()
+                self.preview_mode = False
+                self.preview_filter_params = None
                 self.show_image(self.filtered_image)
                 self.update_display()
             else:
@@ -613,7 +635,8 @@ class FilterApp(QMainWindow):
                 self.preview_filter_params = None
 
             self.filters.pop(current_row)
-
+            self.preview_mode = False
+            self.preview_filter_params = None
             self.update_filters_list()
             self.update_display()
 
@@ -677,6 +700,7 @@ class FilterApp(QMainWindow):
                 self.preview_filter_params = params.copy()
                 self.preview_filter_index = filter_index if filter_index is not None else -1
 
+            QApplication.processEvents()
             self.update_display()
         except Exception as e:
             print(f"Error handling preview: {e}")
@@ -685,49 +709,33 @@ class FilterApp(QMainWindow):
         if self.image is None:
             return
 
-        view_state = self.image_viewer.get_viewport_state()
-        self.filtered_image = self.original_image.copy()
+        try:
+            view_state = self.image_viewer.get_viewport_state()
+            self.filtered_image = self.original_image.copy()
+            for i, filter_data in enumerate(self.filters):
+                if not filter_data.get('visible', True):
+                    continue
 
-        if not self.preview_mode:
-            for filter_data in self.filters:
-                if filter_data.get('visible', True):
-                    self.filtered_image = self.apply_single_filter(
-                        self.filtered_image,
-                        filter_data['name'],
-                        filter_data['params']
-                    )
-        else:
-            if self.preview_filter_index == -1:
-                for filter_data in self.filters:
-                    if filter_data.get('visible', True):
-                        self.filtered_image = self.apply_single_filter(
-                            self.filtered_image,
-                            filter_data['name'],
-                            filter_data['params']
-                        )
-                if self.preview_filter_params is not None:
-                    self.filtered_image = self.apply_single_filter(
-                        self.filtered_image,
-                        self.preview_filter_name,
-                        self.preview_filter_params
-                    )
-            else:
-                for i, filter_data in enumerate(self.filters):
-                    if i != self.preview_filter_index and filter_data.get('visible', True):
-                        self.filtered_image = self.apply_single_filter(
-                            self.filtered_image,
-                            filter_data['name'],
-                            filter_data['params']
-                        )
-                if self.preview_filter_params is not None:
-                    self.filtered_image = self.apply_single_filter(
-                        self.filtered_image,
-                        self.preview_filter_name,
-                        self.preview_filter_params
-                    )
+                if self.preview_mode and i == self.preview_filter_index:
+                    continue
 
-        self.show_image(self.filtered_image)
-        self.image_viewer.set_viewport_state(view_state)
+                self.filtered_image = self.apply_single_filter(
+                    self.filtered_image,
+                    filter_data['name'],
+                    filter_data['params']
+                )
+
+            if self.preview_mode and self.preview_filter_params is not None:
+                self.filtered_image = self.apply_single_filter(
+                    self.filtered_image,
+                    self.preview_filter_name,
+                    self.preview_filter_params
+                )
+
+            self.show_image(self.filtered_image)
+            self.image_viewer.set_viewport_state(view_state)
+        except Exception as e:
+            print(f"Error updating display: {e}")
 
     def show_image(self, image):
         view_state = self.image_viewer.get_viewport_state()
@@ -750,8 +758,6 @@ class FilterApp(QMainWindow):
                 )
             elif filter_name == "Brightness":
                 return adjust_brightness(img, params.get('value', 0))
-            elif filter_name == "Invert":
-                return cv2.bitwise_not(img)
             elif filter_name == "Blur":
                 size = max(1, params.get('size', 5))
                 if size % 2 == 0:
@@ -762,11 +768,15 @@ class FilterApp(QMainWindow):
                 edges = cv2.Canny(
                     gray,
                     max(1, params.get('threshold1', 100)),
-                    max(1, params.get('threshold2', 200))
+                    max(1, params.get('threshold2', 250))
                 )
                 return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+            elif filter_name == "Invert":
+                return cv2.bitwise_not(img)
             elif filter_name == "Sepia":
                 return apply_sepia(img)
+            elif filter_name == "Grayscale":
+                return apply_grayscale(img)
             elif filter_name == "Custom Kernel":
                 kernel = params.get('kernel', np.array([
                     [0, -1, 0],

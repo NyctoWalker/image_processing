@@ -23,6 +23,11 @@ def apply_sepia(img):
     return np.clip(img.dot(sepia_filter.T), 0, 255).astype('uint8')
 
 
+def apply_grayscale(img):
+    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    return np.stack((gray,) * 3, axis=-1).astype('uint8')
+
+
 def pixelize_image(img, pixel_size=8):
     h, w = img.shape[:2]
 

@@ -91,6 +91,108 @@
         }
       ],
       "created_at": 1745696010.495301
+    },
+    "Funky egdes": {
+      "filters": [
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 2,
+            "method": "quantize",
+            "num_colors": 8
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 200,
+            "brightness": 103
+          },
+          "visible": true
+        },
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 59,
+            "threshold2": 54
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1745730959.617699
+    },
+    "Preserve edge detection": {
+      "filters": [
+        {
+          "name": "Custom Kernel",
+          "params": {
+            "kernel_size": 3,
+            "kernel": [
+              [
+                -1.0,
+                0.0,
+                1.0
+              ],
+              [
+                -1.0,
+                0.0,
+                1.0
+              ],
+              [
+                -1.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          "visible": true
+        },
+        {
+          "name": "Custom Kernel",
+          "params": {
+            "kernel_size": 3,
+            "kernel": [
+              [
+                -1.0,
+                -1.0,
+                -1.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                1.0,
+                1.0,
+                1.0
+              ]
+            ]
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 0,
+            "brightness": 101
+          },
+          "visible": true
+        },
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 1,
+            "method": "quantize",
+            "num_colors": 4
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1745733429.2339656
     }
   }
 }
