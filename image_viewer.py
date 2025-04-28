@@ -64,12 +64,12 @@ class ImageViewer(QLabel):
     def update_status_bar(self):
         if self.original_pixmap is not None:
             size = self.original_pixmap.size()
-            self.image_size_label.setText(f"Size: {size.width()}x{size.height()}")
-            self.zoom_label.setText(f"Zoom: {self.zoom_factor:.1f}x")
+            self.image_size_label.setText(f"Размер: {size.width()}x{size.height()} пикс.")
+            self.zoom_label.setText(f"Масштаб: {self.zoom_factor:.1f}x")
         else:
-            self.image_size_label.setText("Size: N/A")
-            self.mouse_pos_label.setText("Position: N/A")
-            self.zoom_label.setText("Zoom: N/A")
+            self.image_size_label.setText("Размер: N/A")
+            self.mouse_pos_label.setText("Позиция: N/A")
+            self.zoom_label.setText("Масштаб: N/A")
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.original_pixmap is None:
@@ -79,9 +79,9 @@ class ImageViewer(QLabel):
             pos = event.position()  # This is QPointF
             img_pos = self.widget_to_image_pos(pos)
             if img_pos:
-                self.mouse_pos_label.setText(f"Mouse: {int(img_pos.x())}, {int(img_pos.y())}")
+                self.mouse_pos_label.setText(f"Позиция: {int(img_pos.x())}, {int(img_pos.y())}")
             else:
-                self.mouse_pos_label.setText("Mouse: Out of image")
+                self.mouse_pos_label.setText("Позиция: Вне картинки")
 
             if self.is_panning and not self.fit_to_window:
                 current_pos = event.position()  # Keep as QPointF

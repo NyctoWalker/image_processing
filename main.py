@@ -12,6 +12,9 @@ from PyQt6.QtGui import QImage, QPixmap, QAction
 import cv2
 import numpy as np
 import time
+import multiprocessing
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
@@ -297,6 +300,10 @@ class FilterApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
+
+        self.thread_pool = ThreadPoolExecutor(max_workers=4)
+        self.current_task = None
+
         self.setWindowTitle("Обработчик изображений")
         self.setGeometry(100, 100, 1200, 700)
 
@@ -435,7 +442,7 @@ class FilterApp(QMainWindow):
         preset_layout.addLayout(btn_layout)
         preset_group.setLayout(preset_layout)
 
-        left_panel.insertWidget(5, preset_group)
+        left_panel.insertWidget(4, preset_group)
         self.update_preset_combo()
 # endregion
 
@@ -446,13 +453,31 @@ class FilterApp(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Пожалуйста, введите название шаблона")
             return
 
+        # Проверка существования шаблона с таким названием
+        if name in self.presets:
+            reply = QMessageBox.question(
+                self, "Шаблон существует", f"Шаблон с именем '{name}' уже существует. Хотите перезаписать его?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        # Сохранение
         self.presets[name] = {
             "filters": [f.copy() for f in self.filters],
             "created_at": time.time()
         }
+
+        for preset in self.presets.values():
+            for f in preset["filters"]:
+                if 'kernel' in f['params'] and isinstance(f['params']['kernel'], np.ndarray):
+                    f['params']['kernel'] = f['params']['kernel'].tolist()
+
         self.save_presets()
         self.update_preset_combo()
         self.preset_name_edit.clear()
+
+        QMessageBox.information(self, "Сохранено", f"Шаблон '{name}' успешно сохранён!")
 
     def update_preset_combo(self):
         self.preset_combo.clear()
@@ -481,7 +506,8 @@ class FilterApp(QMainWindow):
             for f in data["filters"]:
                 serialized = f.copy()
                 if 'kernel' in serialized['params']:
-                    serialized['params']['kernel'] = serialized['params']['kernel'].tolist()
+                    if isinstance(serialized['params']['kernel'], np.ndarray):
+                        serialized['params']['kernel'] = serialized['params']['kernel'].tolist()
                 serialized_filters.append(serialized)
 
             presets_to_save["presets"][name] = {
@@ -490,10 +516,29 @@ class FilterApp(QMainWindow):
             }
 
         try:
+            if Path(self.PRESETS_FILE).exists():
+                backup_path = Path(self.PRESETS_FILE).with_suffix('.bak')
+                try:
+                    if backup_path.exists():
+                        backup_path.unlink()
+                    Path(self.PRESETS_FILE).rename(backup_path)
+                except Exception as backup_error:
+                    print(f"Could not create backup: {backup_error}")
+
             with open(self.PRESETS_FILE, "w", encoding="utf-8") as f:
                 json.dump(presets_to_save, f, indent=2, ensure_ascii=False)
+
         except Exception as e:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось сохранить шаблоны: {str(e)}")
+            QMessageBox.critical(
+                self, "Ошибка сохранения", f"Не удалось сохранить шаблоны: {str(e)}\n\nПопробуйте ещё раз."
+            )
+            if backup_path and backup_path.exists():
+                try:
+                    if Path(self.PRESETS_FILE).exists():
+                        Path(self.PRESETS_FILE).unlink()
+                    backup_path.rename(self.PRESETS_FILE)
+                except Exception as restore_error:
+                    print(f"Could not restore backup: {restore_error}")
 
     def load_presets(self):
         try:
@@ -516,8 +561,11 @@ class FilterApp(QMainWindow):
                 deserialized_filters = []
                 for f in preset_data["filters"]:
                     deserialized = f.copy()
-                    if 'kernel' in deserialized['params']:
+                    deserialized['params'] = f['params'].copy()
+
+                    if 'kernel' in deserialized['params'] and isinstance(deserialized['params']['kernel'], list):
                         deserialized['params']['kernel'] = np.array(deserialized['params']['kernel'])
+
                     deserialized_filters.append(deserialized)
 
                 self.presets[name] = {
@@ -537,19 +585,38 @@ class FilterApp(QMainWindow):
         was_in_preview = self.preview_mode
         preview_index = self.preview_filter_index if was_in_preview else -1
 
-        self.filters = [f.copy() for f in self.presets[name]["filters"]]
+        try:
+            self.filters = []
+            for f in self.presets[name]["filters"]:
+                filter_copy = f.copy()
+                filter_copy['params'] = f['params'].copy()
 
-        self.cache = []
-        self.dirty_flags = [True] * len(self.filters)
+                if 'kernel' in filter_copy['params'] and isinstance(filter_copy['params']['kernel'], list):
+                    filter_copy['params']['kernel'] = np.array(filter_copy['params']['kernel'])
 
-        self.update_filters_list()
+                self.filters.append(filter_copy)
 
-        self.preview_mode = False
-        self.update_display()
+            self.loaded_preset_name = name
+            self.cache = []
+            self.dirty_flags = [True] * len(self.filters)
+            self.update_filters_list()
+            self.preview_mode = False
+            self.update_display()
 
-        if was_in_preview and preview_index < len(self.filters):
-            self.preview_mode = True
-            self.preview_filter_index = preview_index
+            if was_in_preview and preview_index < len(self.filters):
+                self.preview_mode = True
+                self.preview_filter_index = preview_index
+                self.update_display()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Ошибка загрузки",
+                f"Не удалось загрузить шаблон '{name}':\n{str(e)}"
+            )
+            print(f"Error loading preset {name}: {e}")
+            self.filters = []
+            self.update_cache_and_dirty_flags()
+            self.update_filters_list()
             self.update_display()
 
     def delete_selected_preset(self):
@@ -558,14 +625,33 @@ class FilterApp(QMainWindow):
             return
 
         reply = QMessageBox.question(
-            self, "Удаление шаблона", f"Вы действительно хотите удалить '{name}'?",
+            self, "Удаление шаблона", f"Вы действительно хотите удалить шаблон '{name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
+            current_index = self.preset_combo.currentIndex()
+            was_last_item = (current_index == self.preset_combo.count() - 1)
+
             del self.presets[name]
             self.save_presets()
             self.update_preset_combo()
+
+            if self.preset_combo.count() > 0:
+                if was_last_item:
+                    self.preset_combo.setCurrentIndex(self.preset_combo.count() - 1)
+                else:
+                    new_index = min(current_index, self.preset_combo.count() - 1)
+                    self.preset_combo.setCurrentIndex(new_index)
+            else:
+                self.preset_combo.clear()
+
+            if (hasattr(self, 'loaded_preset_name') and self.loaded_preset_name == name):
+                self.filters = []
+                self.update_cache_and_dirty_flags()
+                self.update_filters_list()
+                self.update_display()
+                delattr(self, 'loaded_preset_name')
 # endregion
 
 # region caching flags
@@ -626,16 +712,22 @@ class FilterApp(QMainWindow):
         filter_name = item.text()
         filter_def = FILTER_DEFINITIONS[filter_name]
 
+        # Храним текущее превью
+        previous_preview_state = {
+            'mode': self.preview_mode,
+            'index': self.preview_filter_index,
+            'name': getattr(self, 'preview_filter_name', None),
+            'params': self.preview_filter_params.copy() if self.preview_filter_params else None
+        }
+
         if not filter_def["has_params"]:
+            # Если у фильтра нет параметров, пропускаем диалоговое окно
             self.filters.append({'name': filter_name, 'params': {}, 'visible': True})
             self.update_cache_and_dirty_flags()
             self.mark_dirty_from(len(self.filters) - 1)
             self.update_filters_list()
             self.update_display()
             return
-
-        was_in_preview = self.preview_mode
-        preview_index = self.preview_filter_index if was_in_preview else -1
 
         dialog = FilterDialog(filter_name, parent=self)
         dialog.preview_requested.connect(
@@ -644,17 +736,20 @@ class FilterApp(QMainWindow):
         )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Принятие - добавляем фильтр
             params = dialog.get_params()
             self.filters.append({'name': filter_name, 'params': params, 'visible': True})
             self.update_cache_and_dirty_flags()
             self.mark_dirty_from(len(self.filters) - 1)
-            self.update_filters_list()
             self.preview_mode = False
+            self.update_filters_list()
             self.update_display()
         else:
-            if was_in_preview:
-                self.preview_mode = True
-                self.preview_filter_index = preview_index
+            # Отмена - восстановление предыдущего состояние
+            self.preview_mode = previous_preview_state['mode']
+            self.preview_filter_index = previous_preview_state['index']
+            self.preview_filter_name = previous_preview_state['name']
+            self.preview_filter_params = previous_preview_state['params']
             self.update_display()
 
     def edit_filter(self, item):
@@ -665,17 +760,32 @@ class FilterApp(QMainWindow):
         if not FILTER_DEFINITIONS[filter_name]["has_params"]:
             return
 
+        # СОхранение превью на случай отмены
+        previous_preview_state = {
+            'mode': self.preview_mode,
+            'index': self.preview_filter_index,
+            'name': getattr(self, 'preview_filter_name', None),
+            'params': self.preview_filter_params.copy() if self.preview_filter_params else None
+        }
+
         dialog = FilterDialog(filter_name, filter_data['params'], self)
-        dialog.preview_requested.connect(lambda name, params: self.handle_preview_request(name, params, index))
+        dialog.preview_requested.connect(
+            lambda name, params: self.handle_preview_request(name, params, index)
+        )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Принятие - применение фильтра
             self.filters[index]['params'] = dialog.get_params()
             self.mark_dirty_from(index)
-
+            self.preview_mode = False
             self.update_filters_list()
             self.update_display()
         else:
-            self.preview_mode = False
+            # Отмена - восстановление состояния
+            self.preview_mode = previous_preview_state['mode']
+            self.preview_filter_index = previous_preview_state['index']
+            self.preview_filter_name = previous_preview_state['name']
+            self.preview_filter_params = previous_preview_state['params']
             self.update_display()
 
     def remove_selected_filter(self):
@@ -768,59 +878,68 @@ class FilterApp(QMainWindow):
             return
 
         self.update_cache_and_dirty_flags()
+        view_state = self.image_viewer.get_viewport_state()
 
         try:
-            view_state = self.image_viewer.get_viewport_state()
             current_image = self.original_image.copy()
 
-            try:
-                start_index = next(i for i, dirty in enumerate(self.dirty_flags) if dirty)
-            except StopIteration:
-                start_index = len(self.filters)
-
-            if start_index > 0:
-                current_image = self.cache[start_index - 1].copy()
-
-            for i in range(start_index, len(self.filters)):
-                if not self.dirty_flags[i]:
-                    current_image = self.cache[i].copy()
+            # Применение всех "чистых" фильтров ДО точки текущего фильтра
+            for i in range(len(self.filters)):
+                if not self.filters[i]['visible']:
                     continue
 
-                if self.filters[i]['visible']:
+                if self.dirty_flags[i] or i >= len(self.cache) or self.cache[i] is None:
                     current_image = self.apply_single_filter(
                         current_image,
                         self.filters[i]['name'],
                         self.filters[i]['params']
                     )
+                    self.cache[i] = current_image.copy()
+                    self.dirty_flags[i] = False
+                else:
+                    current_image = self.cache[i].copy()
 
-                self.cache[i] = current_image.copy()
-                self.dirty_flags[i] = False
+            # Превью
+            if self.preview_mode and self.preview_filter_params is not None:
+                if self.preview_filter_index < 0:
+                    preview_base = current_image.copy()
+                else:
+                    preview_base = self.original_image.copy()
+                    for i in range(self.preview_filter_index):
+                        if self.filters[i]['visible']:
+                            preview_base = self.apply_single_filter(
+                                preview_base,
+                                self.filters[i]['name'],
+                                self.filters[i]['params']
+                            )
 
-            if self.preview_mode and self.preview_filter_params and self.preview_filter_index != -1:
-                preview_base = self.original_image.copy()
-                if self.preview_filter_index > 0 and self.cache:
-                    preview_base = self.cache[self.preview_filter_index - 1].copy()
-
+                # Применение превью
                 preview_image = self.apply_single_filter(
                     preview_base,
                     self.preview_filter_name,
                     self.preview_filter_params
                 )
 
-                for i in range(self.preview_filter_index + 1, len(self.filters)):
-                    if self.filters[i]['visible']:
-                        preview_image = self.apply_single_filter(
-                            preview_image,
-                            self.filters[i]['name'],
-                            self.filters[i]['params']
-                        )
+                # Остальные фильтры после превью
+                if self.preview_filter_index >= 0:
+                    for i in range(self.preview_filter_index + 1, len(self.filters)):
+                        if self.filters[i]['visible']:
+                            preview_image = self.apply_single_filter(
+                                preview_image,
+                                self.filters[i]['name'],
+                                self.filters[i]['params']
+                            )
 
                 current_image = preview_image
 
+            # Обновление отображения
+            self.filtered_image = current_image.copy()
             self.show_image(current_image)
             self.image_viewer.set_viewport_state(view_state)
+
         except Exception as e:
-            print(f"Error updating display: {e}")
+            print(f"Error in update_display: {e}")
+            self.show_image(self.original_image.copy())
 
     def show_image(self, image):
         view_state = self.image_viewer.get_viewport_state()
@@ -928,6 +1047,16 @@ class FilterListItem(QWidget):
 
     def set_checked(self, state):
         self.checkbox.setChecked(state)
+
+
+def get_optimal_workers():
+    try:
+        physical_cores = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
+        if physical_cores is None:
+            return 2
+        return max(1, physical_cores - 1)
+    except:
+        return 2
 
 
 if __name__ == "__main__":
