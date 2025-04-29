@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QDialogButtonBox, QFormLayout, QSlider,
     QLabel, QPushButton, QInputDialog, QGroupBox, QHBoxLayout, QComboBox, QWidget
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 import numpy as np
 
 
@@ -80,13 +80,13 @@ class PixelArtDialog(QWidget):
         self.method_slider_connections = []
         self.init_ui()
 
-        self.pixel_size_slider["slider"].valueChanged.connect(self.emit_preview)
-        self.method_combo.currentTextChanged.connect(self.handle_method_change)
+        # self.pixel_size_slider["slider"].valueChanged.connect(self.emit_preview)
+        # self.method_combo.currentTextChanged.connect(self.handle_method_change)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
 
-        method_group = QGroupBox("Метод для Pixel Art")
+        method_group = QGroupBox("Метод для Pixel Art (тяжёлый фильтр)")
         method_layout = QVBoxLayout()
 
         self.method_combo = QComboBox()
@@ -101,12 +101,12 @@ class PixelArtDialog(QWidget):
         except Exception:
             self.method_combo.setCurrentIndex(1)  # Quantize
 
-        method_layout.addWidget(QLabel("Processing Method:"))
+        method_layout.addWidget(QLabel("Метод обработки:"))
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
         layout.addWidget(method_group)
 
-        common_group = QGroupBox("Common Settings")
+        common_group = QGroupBox("Общие настройки")
         common_layout = QVBoxLayout()
 
         pixel_size = max(1, min(32, self.params.get("pixel_size", 8)))
@@ -116,7 +116,7 @@ class PixelArtDialog(QWidget):
         common_group.setLayout(common_layout)
         layout.addWidget(common_group)
 
-        self.method_group = QGroupBox("Method Settings")
+        self.method_group = QGroupBox("Настройки метода")
         self.method_layout = QVBoxLayout()
         self.method_group.setLayout(self.method_layout)
         layout.addWidget(self.method_group)
@@ -125,16 +125,9 @@ class PixelArtDialog(QWidget):
         self.create_method_controls()
         self.update_visible_controls()
 
-        self.pixel_size_slider["slider"].valueChanged.connect(self.emit_preview)
+        # self.pixel_size_slider["slider"].valueChanged.connect(self.emit_preview)
+        self.pixel_size_slider["slider"].sliderReleased.connect(self.emit_preview)
         self.method_combo.currentTextChanged.connect(self.handle_method_change)
-
-        # buttons = QDialogButtonBox(
-        #     QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
-        #     parent=self
-        # )
-        # buttons.accepted.connect(self.accept)
-        # buttons.rejected.connect(self.reject)
-        # layout.addWidget(buttons)
 
     def create_slider(self, label, value, min_val, max_val, suffix=""):
         layout = QHBoxLayout()
@@ -172,11 +165,11 @@ class PixelArtDialog(QWidget):
         }
 
         # Quantize
-        quantize_group = QGroupBox("Color Quantization")
+        quantize_group = QGroupBox("Квантизация цветов")
         quantize_layout = QVBoxLayout()
 
         num_colors = max(2, min(32, self.params.get("num_colors", 16)))
-        self.controls["quantize"]["num_colors"] = self.create_slider("Number of Colors:", num_colors, 2, 32)
+        self.controls["quantize"]["num_colors"] = self.create_slider("Количество цветов:", num_colors, 2, 32)
         quantize_layout.addLayout(self.controls["quantize"]["num_colors"]["layout"])
 
         quantize_group.setLayout(quantize_layout)
@@ -185,11 +178,11 @@ class PixelArtDialog(QWidget):
         self.controls["quantize"]["group"] = quantize_group
 
         # Edge
-        edge_group = QGroupBox("Edge Preservation")
+        edge_group = QGroupBox("Сохранение граней")
         edge_layout = QVBoxLayout()
 
         edge_threshold = max(1, min(100, self.params.get("edge_threshold", 30)))
-        self.controls["edge"]["edge_threshold"] = self.create_slider("Edge Threshold:", edge_threshold, 1, 100)
+        self.controls["edge"]["edge_threshold"] = self.create_slider("Порог границ:", edge_threshold, 1, 100)
         edge_layout.addLayout(self.controls["edge"]["edge_threshold"]["layout"])
 
         edge_group.setLayout(edge_layout)
@@ -198,12 +191,11 @@ class PixelArtDialog(QWidget):
         self.controls["edge"]["group"] = edge_group
 
         # Dither
-        dither_group = QGroupBox("Dithering")
+        dither_group = QGroupBox("Дизеринг")
         dither_layout = QVBoxLayout()
 
         dither_strength = max(0, min(100, self.params.get("dither_strength", 50)))
-        self.controls["dither"]["dither_strength"] = self.create_slider(
-            "Dither Strength:", dither_strength, 0, 100, "%")
+        self.controls["dither"]["dither_strength"] = self.create_slider("Сила дизеринга:", dither_strength, 0, 100, "%")
         dither_layout.addLayout(self.controls["dither"]["dither_strength"]["layout"])
 
         dither_group.setLayout(dither_layout)
@@ -215,15 +207,18 @@ class PixelArtDialog(QWidget):
 
         if "num_colors" in self.controls["quantize"]:
             self.method_slider_connections.append(
-                self.controls["quantize"]["num_colors"]["slider"].valueChanged.connect(self.emit_preview))
+                # self.controls["quantize"]["num_colors"]["slider"].valueChanged.connect(self.emit_preview))
+                self.controls["quantize"]["num_colors"]["slider"].sliderReleased.connect(self.emit_preview))
 
         if "edge_threshold" in self.controls["edge"]:
             self.method_slider_connections.append(
-                self.controls["edge"]["edge_threshold"]["slider"].valueChanged.connect(self.emit_preview))
+                # self.controls["edge"]["edge_threshold"]["slider"].valueChanged.connect(self.emit_preview))
+                self.controls["edge"]["edge_threshold"]["slider"].sliderReleased.connect(self.emit_preview))
 
         if "dither_strength" in self.controls["dither"]:
             self.method_slider_connections.append(
-                self.controls["dither"]["dither_strength"]["slider"].valueChanged.connect(self.emit_preview))
+                # self.controls["dither"]["dither_strength"]["slider"].valueChanged.connect(self.emit_preview))
+                self.controls["dither"]["dither_strength"]["slider"].sliderReleased.connect(self.emit_preview))
 
     def disconnect_method_sliders(self):
         for connection in self.method_slider_connections:
@@ -238,16 +233,20 @@ class PixelArtDialog(QWidget):
         self.emit_preview()
 
     def emit_preview(self):
-        try:
-            current_time = time.time()
-            if current_time - self.last_update_time < 0.33:  # ~3 обновления/сек
-                return
+        if hasattr(self, '_update_timer'):
+            self._update_timer.stop()
 
-            self.last_update_time = current_time
-            params = self.get_params()
+        self._update_timer = QTimer()
+        self._update_timer.setSingleShot(True)
+        self._update_timer.timeout.connect(self._process_preview_emit)
+        self._update_timer.start(350)
+
+    def _process_preview_emit(self):
+        params = self.get_params()
+        try:
             self.preview_requested.emit(params)
         except Exception as e:
-            print(f"Error emitting preview: {e}")
+            print(f"Error emitting preview signal: {e}")
 
     def update_visible_controls(self):
         try:

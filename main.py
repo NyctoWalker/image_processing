@@ -7,15 +7,12 @@ from PyQt6.QtWidgets import (
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSettings
+from PyQt6.QtCore import Qt, pyqtSignal, QSettings, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QAction
 import cv2
 import numpy as np
 import time
-import multiprocessing
 import os
-from concurrent.futures import ThreadPoolExecutor
-import threading
 
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
@@ -199,11 +196,15 @@ class FilterDialog(QDialog):
         if not self.preview_enabled or not self.initialized:
             return
 
-        current_time = time.time()
-        if current_time - self.last_update_time < 0.10:
-            return
+        if hasattr(self, '_update_timer'):
+            self._update_timer.stop()
 
-        self.last_update_time = current_time
+        self._update_timer = QTimer()
+        self._update_timer.setSingleShot(True)
+        self._update_timer.timeout.connect(self._process_slider_change)
+        self._update_timer.start(150)  # мс от последних изменений
+
+    def _process_slider_change(self):
         self.current_params = self.get_current_params()
         try:
             self.preview_requested.emit(self.filter_name, self.current_params.copy())
@@ -301,12 +302,6 @@ class FilterApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
-        self.thread_pool = ThreadPoolExecutor(max_workers=get_optimal_workers())
-        self.current_task = None
-        self.processing_queue = []
-        self.processing_lock = threading.Lock()
-        self.latest_request_id = 0
 
         self.setWindowTitle("Обработчик изображений")
         self.setGeometry(100, 100, 1200, 700)
