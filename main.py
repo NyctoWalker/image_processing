@@ -33,7 +33,7 @@ FILTER_DEFINITIONS = {
     "Brightness": {
         "has_params": True,
         "default_params": {"value": 0},
-        "display_text": lambda p: f"Brightness ({p['value']})",
+        "display_text": lambda p: f"Яркость ({p['value']})",
         "dialog_sliders": [
             {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "value_label": lambda v: str(v)}
         ]
@@ -41,7 +41,7 @@ FILTER_DEFINITIONS = {
     "Blur": {
         "has_params": True,
         "default_params": {"size": 1},
-        "display_text": lambda p: f"Blur (size: {p['size']})",
+        "display_text": lambda p: f"Размытие (size: {p['size']})",
         "dialog_sliders": [
             {"label": "Размер ядра:", "key": "size", "min": 1, "max": 31,
              "value_label": lambda v: str(v), "odd_only": True}
@@ -50,7 +50,7 @@ FILTER_DEFINITIONS = {
     "Edge Detection": {
         "has_params": True,
         "default_params": {"threshold1": 100, "threshold2": 250},
-        "display_text": lambda p: f"Edge Detection ({p['threshold1']}-{p['threshold2']})",
+        "display_text": lambda p: f"Детекция краёв ({p['threshold1']}-{p['threshold2']})",
         "dialog_sliders": [
             {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "value_label": lambda v: str(v)},
             {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 500, "value_label": lambda v: str(v)}
@@ -58,15 +58,15 @@ FILTER_DEFINITIONS = {
     },
     "Invert": {
         "has_params": False,
-        "display_text": lambda p: "Invert"
+        "display_text": lambda p: "Инверсия"
     },
     "Sepia": {
         "has_params": False,
-        "display_text": lambda p: "Sepia"
+        "display_text": lambda p: "Сепия"
     },
     "Grayscale": {
         "has_params": False,
-        "display_text": lambda p: "Grayscale"
+        "display_text": lambda p: "Ч/Б (градации серого)"
     },
     "Custom Kernel": {
         "has_params": True,
@@ -78,7 +78,7 @@ FILTER_DEFINITIONS = {
                 [0, -1, 0]
             ])
         },
-        "display_text": lambda p: f"Custom Kernel ({p['kernel'].shape[0]}x{p['kernel'].shape[0]})",
+        "display_text": lambda p: f"Кастомное ядро ({p['kernel'].shape[0]}x{p['kernel'].shape[0]})",
         "custom_dialog": True
     },
     "Pixel Art": {
@@ -90,13 +90,13 @@ FILTER_DEFINITIONS = {
             "edge_threshold": 30,
             "dither_strength": 50
         },
-        "display_text": lambda p: f"Pixel Art ({p['method']}, {p['pixel_size']}px)",
+        "display_text": lambda p: f"Пиксель-арт ({p['method']}, {p['pixel_size']}px)",
         "custom_dialog": True
     },
     "Resize": {
         "has_params": True,
         "default_params": {"scale": 100, "interpolation": "linear"},
-        "display_text": lambda p: f"Resize ({p['scale']}%)",
+        "display_text": lambda p: f"Изменение размера ({p['scale']}%)",
         "dialog_sliders": [
             {"label": "Scale:", "key": "scale", "min": 10, "max": 400, "value_label": lambda v: f"{v}%"},
         ],
@@ -105,6 +105,19 @@ FILTER_DEFINITIONS = {
              "items": ["Nearest", "Linear", "Cubic", "Area", "Lanczos"]}
         ]
     }
+}
+
+FILTER_DISPLAY_NAMES = {
+    "HSB Adjustment": "Цветокоррекция HSB",
+    "Brightness": "Яркость",
+    "Blur": "Размытие (Гаусс)",
+    "Edge Detection": "Детекция краёв",
+    "Invert": "Инверсия",
+    "Sepia": "Сепия",
+    "Grayscale": "Ч/Б (градации серого)",
+    "Custom Kernel": "Кастомное ядро",
+    "Pixel Art": "Пиксель-арт",
+    "Resize": "Изменение размера"
 }
 
 
@@ -343,10 +356,10 @@ class FilterApp(QMainWindow):
 
         # Список доступных фильтров
         self.available_filters = QListWidget()
-        self.available_filters.addItems([
-            "HSB Adjustment", "Brightness", "Blur", "Edge Detection",
-            "Invert", "Sepia", "Grayscale", "Custom Kernel", "Pixel Art", "Resize"
-        ])
+        for internal_name, display_name in FILTER_DISPLAY_NAMES.items():
+            item = QListWidgetItem(display_name)
+            item.setData(Qt.ItemDataRole.UserRole, internal_name)
+            self.available_filters.addItem(item)
         self.available_filters.itemDoubleClicked.connect(self.add_filter)
         left_panel.addWidget(QLabel("Доступные фильтры (двойной клик для добавления):"))
         left_panel.addWidget(self.available_filters)
@@ -708,7 +721,7 @@ class FilterApp(QMainWindow):
 
 # region filters crud
     def add_filter(self, item):
-        filter_name = item.text()
+        filter_name = item.data(Qt.ItemDataRole.UserRole)
         filter_def = FILTER_DEFINITIONS[filter_name]
 
         # Храним текущее превью
