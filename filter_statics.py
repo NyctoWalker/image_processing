@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
+from numba import jit
 
 
+# region HSB/Pixel modify
 def apply_hsb_adjustment(img, hue, saturation, brightness):
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')  # HSV
     hsv[..., 0] = (hsv[..., 0] + (hue / 2)) % 180  # H
@@ -12,6 +14,7 @@ def apply_hsb_adjustment(img, hue, saturation, brightness):
 
 def adjust_brightness(img, value):
     return np.clip(img.astype('int32') + value, 0, 255).astype('uint8')
+# endregion
 
 
 def apply_sepia(img):
@@ -20,12 +23,12 @@ def apply_sepia(img):
         [0.349, 0.686, 0.168],
         [0.272, 0.534, 0.131]
     ])
-    return np.clip(img.dot(sepia_filter.T), 0, 255).astype('uint8')
+    return cv2.transform(img, sepia_filter).clip(0, 255).astype('uint8')
 
 
 def apply_grayscale(img):
-    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-    return np.stack((gray,) * 3, axis=-1).astype('uint8')
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    return cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 
 
 def pixelize_image(img, pixel_size=8):
@@ -60,10 +63,8 @@ def pixelize_kmeans(img, pixel_size=8, num_colors=16):
 
     # Color quantization K-means
     pixels = small_img.reshape(-1, 3).astype(np.float32)
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 200, 0.1)
-    _, labels, centers = cv2.kmeans(
-        pixels, num_colors, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS
-    )
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.1)
+    _, labels, centers = cv2.kmeans(pixels, num_colors, None, criteria, 5, cv2.KMEANS_RANDOM_CENTERS)
 
     centers = np.uint8(centers)
     quantized = centers[labels.flatten()]

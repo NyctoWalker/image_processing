@@ -15,6 +15,7 @@ import time
 import multiprocessing
 import os
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
@@ -301,8 +302,11 @@ class FilterApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.thread_pool = ThreadPoolExecutor(max_workers=4)
+        self.thread_pool = ThreadPoolExecutor(max_workers=get_optimal_workers())
         self.current_task = None
+        self.processing_queue = []
+        self.processing_lock = threading.Lock()
+        self.latest_request_id = 0
 
         self.setWindowTitle("Обработчик изображений")
         self.setGeometry(100, 100, 1200, 700)
