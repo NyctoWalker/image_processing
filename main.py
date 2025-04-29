@@ -17,7 +17,8 @@ import os
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
-    pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale
+    pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, \
+    apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -68,6 +69,10 @@ FILTER_DEFINITIONS = {
         "has_params": False,
         "display_text": lambda p: "Ч/Б (градации серого)"
     },
+    "Bleach": {
+        "has_params": False,
+        "display_text": lambda p: "Выцветание (Ч/Б с контрастом)"
+    },
     "Custom Kernel": {
         "has_params": True,
         "default_params": {
@@ -104,7 +109,39 @@ FILTER_DEFINITIONS = {
             {"label": "Interpolation:", "key": "interpolation",
              "items": ["Nearest", "Linear", "Cubic", "Area", "Lanczos"]}
         ]
-    }
+    },
+    "Posterize": {
+        "has_params": True,
+        "default_params": {"levels": 4},
+        "display_text": lambda p: f"Пастеризация ({p['levels']})",
+        "dialog_sliders": [
+            {"label": "Уровни:", "key": "levels", "min": 2, "max": 12, "value_label": lambda v: str(v)}
+        ]
+    },
+    "Threshold": {
+        "has_params": True,
+        "default_params": {"thresh": 128},
+        "display_text": lambda p: f"Двоичный порог ({p['thresh']})",
+        "dialog_sliders": [
+            {"label": "Порог:", "key": "thresh", "min": 1, "max": 254, "value_label": lambda v: str(v)}
+        ]
+    },
+    "Dotted": {
+        "has_params": True,
+        "default_params": {"value": 10},
+        "display_text": lambda p: f"Точки ({p['value']})",
+        "dialog_sliders": [
+            {"label": "Уровни:", "key": "value", "min": 2, "max": 20, "value_label": lambda v: str(v)}
+        ]
+    },
+    "Chromatic Abberation": {
+        "has_params": True,
+        "default_params": {"value": 3},
+        "display_text": lambda p: f"Хроматическая абберация ({p['value']})",
+        "dialog_sliders": [
+            {"label": "Смещение:", "key": "value", "min": 2, "max": 40, "value_label": lambda v: str(v)}
+        ]
+    },
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -115,9 +152,14 @@ FILTER_DISPLAY_NAMES = {
     "Invert": "Инверсия",
     "Sepia": "Сепия",
     "Grayscale": "Ч/Б (градации серого)",
+    "Bleach": "Выцветание (Ч/Б с контрастом)",
     "Custom Kernel": "Кастомное ядро",
     "Pixel Art": "Пиксель-арт",
-    "Resize": "Изменение размера"
+    "Resize": "Изменение размера",
+    "Posterize": "Пастеризация",
+    "Threshold": "Пороговая активация",
+    "Dotted": "Точки",
+    "Chromatic Abberation": "Хроматическая абберация",
 }
 
 
@@ -993,6 +1035,12 @@ class FilterApp(QMainWindow):
                 return apply_sepia(img)
             elif filter_name == "Grayscale":
                 return apply_grayscale(img)
+            elif filter_name == "Bleach":
+                return apply_bleach_bypass(img)
+            elif filter_name == "Posterize":
+                return apply_posterize(img, params.get('levels', 4))
+            elif filter_name == "Threshold":
+                return apply_threshold(img, params.get('thresh', 128))
             elif filter_name == "Custom Kernel":
                 kernel = params.get('kernel', np.array([
                     [0, -1, 0],
@@ -1025,6 +1073,10 @@ class FilterApp(QMainWindow):
                 scale = params.get('scale', 100) / 100.0
                 interp = params.get('interpolation', 'linear').lower()
                 return resize_image(img, scale, interp)
+            elif filter_name == "Dotted":
+                return apply_halftone(img, params.get("value", 10))
+            elif filter_name == "Chromatic Abberation":
+                return apply_chromatic_aberration(img, params.get("value", 10))
 
             return img
         except Exception as e:

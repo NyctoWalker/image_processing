@@ -17,6 +17,7 @@ def adjust_brightness(img, value):
 # endregion
 
 
+# region Simple filters
 def apply_sepia(img):
     sepia_filter = np.array([
         [0.393, 0.769, 0.189],
@@ -31,14 +32,24 @@ def apply_grayscale(img):
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
 
 
-def pixelize_image(img, pixel_size=8):
-    h, w = img.shape[:2]
+def apply_posterize(img, levels=4):
+    factor = 256 // levels
+    return np.clip((img // factor) * factor, 0, 255).astype('uint8')
 
-    small_h, small_w = h // pixel_size, w // pixel_size
-    small_img = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_NEAREST)
-    pixel_img = cv2.resize(small_img, (w, h), interpolation=cv2.INTER_NEAREST)
 
-    return pixel_img
+def apply_threshold(img, thresh=128):
+    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    bw = (gray > thresh) * 255
+    return np.stack((bw,)*3, axis=-1).astype('uint8')
+
+
+def apply_bleach_bypass(img):
+    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    desat = (0.7 * gray + 0.3 * img.mean(axis=2))
+    high_contrast = np.clip((desat - 128) * 1.5 + 128, 0, 255)
+    return np.stack((high_contrast,)*3, axis=-1).astype('uint8')
+
+# endregion
 
 
 def resize_image(img, scale_factor=1.0, interpolation='linear'):
@@ -53,6 +64,45 @@ def resize_image(img, scale_factor=1.0, interpolation='linear'):
     if scale_factor != 1.0:
         return cv2.resize(img, None, fx=scale_factor, fy=scale_factor, interpolation=inter)
     return img
+
+
+def apply_halftone(img, dot_size=10):
+    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    h, w = gray.shape
+    halftone = np.zeros_like(gray)
+    for y in range(0, h, dot_size):
+        for x in range(0, w, dot_size):
+            block = gray[y:y+dot_size, x:x+dot_size]
+            avg = block.mean()
+            radius = int(dot_size * (1 - avg / 255) / 2)
+            cy, cx = y + dot_size // 2, x + dot_size // 2
+            for i in range(max(0, cy-radius), min(h, cy+radius)):
+                for j in range(max(0, cx-radius), min(w, cx+radius)):
+                    if (i - cy)**2 + (j - cx)**2 <= radius**2:
+                        halftone[i, j] = 0
+                    else:
+                        halftone[i, j] = 255
+    return np.stack((halftone,)*3, axis=-1).astype('uint8')
+
+
+def apply_chromatic_aberration(img, shift=2):
+    h, w, c = img.shape
+    result = np.zeros_like(img)
+    result[:-shift, :-shift, 0] = img[shift:, shift:, 0]
+    result[shift:, shift:, 2] = img[:-shift, :-shift, 2]
+    result[:, :, 1] = img[:, :, 1]
+    return np.clip(result, 0, 255).astype('uint8')
+
+
+# region Pixelizing
+def pixelize_image(img, pixel_size=8):
+    h, w = img.shape[:2]
+
+    small_h, small_w = h // pixel_size, w // pixel_size
+    small_img = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_NEAREST)
+    pixel_img = cv2.resize(small_img, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    return pixel_img
 
 
 def pixelize_kmeans(img, pixel_size=8, num_colors=16):
@@ -115,3 +165,4 @@ def pixelize_dither(img, pixel_size=8, dither_strength=0.5):
     result = np.where(mask, small_img, small_img * 0.7).astype(np.uint8)
 
     return cv2.resize(result, (w, h), interpolation=cv2.INTER_NEAREST)
+# endregion
