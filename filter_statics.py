@@ -36,10 +36,17 @@ def apply_posterize(img, levels=4):
     return np.clip((img // factor) * factor, 0, 255).astype('uint8')
 
 
-def apply_threshold(img, thresh=128):
+def apply_threshold(img, thresh=128, preserve_color=0):
     gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-    bw = (gray > thresh) * 255
-    return np.stack((bw,)*3, axis=-1).astype('uint8')
+    mask = (gray > thresh)
+
+    if preserve_color == 1:
+        result = np.zeros_like(img)
+        result[mask] = img[mask]
+        return result
+    else:
+        bw = mask * 255
+        return np.stack((bw,) * 3, axis=-1).astype('uint8')
 
 
 def apply_bleach_bypass(img):
@@ -52,17 +59,24 @@ def apply_bleach_bypass(img):
 
 
 # region Edge detection
-def apply_canny_thresh(img, threshold1=100, threshold2=250, kernel_size=1):
+def apply_canny_thresh(img, threshold1=100, threshold2=250, kernel_size=1, preserve_color=0):
     fine_high = 150  # На практике не сильно влияет на результат
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     edges_fine = cv2.Canny(blurred, threshold1, fine_high)
     edges_coarse = cv2.Canny(blurred, threshold2, threshold1)
     edges = cv2.bitwise_or(edges_fine, edges_coarse)
+
     if kernel_size > 1:
         kernel = np.ones((kernel_size, kernel_size), np.uint8)
         edges = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
-    return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+    if preserve_color == 1:
+        result = img.copy()
+        result[edges == 255] = 0
+        return result
+    else:
+        return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
 # endregion
 
 
@@ -80,10 +94,14 @@ def resize_image(img, scale_factor=1.0, interpolation='linear'):
     return img
 
 
-def apply_halftone(img, dot_size=4, max_dot_ratio=0.8):
+def apply_halftone(img, dot_size=4, max_dot_ratio=0.8, preserve_color=0):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
     height, width = gray.shape
-    output = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+    if preserve_color == 1:
+        output = img.copy()
+    else:
+        output = np.ones((height, width, 3), dtype=np.uint8) * 255
 
     spacing = max(2, dot_size)
     max_dot_ratio = min(0.9, max(0.1, max_dot_ratio))
@@ -96,8 +114,7 @@ def apply_halftone(img, dot_size=4, max_dot_ratio=0.8):
 
             radius = int((1 - brightness) * (spacing // 2 * max_dot_ratio))
             if radius > 0:
-                cv2.circle(output, (center_x, center_y), radius,
-                           (0, 0, 0), -1, lineType=cv2.LINE_AA)
+                cv2.circle(output, (center_x, center_y), radius, (0, 0, 0), -1, lineType=cv2.LINE_AA)
 
     return output
 
@@ -109,6 +126,75 @@ def apply_chromatic_aberration(img, shift=2):
     result[shift:, shift:, 2] = img[:-shift, :-shift, 2]
     result[:, :, 1] = img[:, :, 1]
     return np.clip(result, 0, 255).astype('uint8')
+
+
+# region Near-pixelizing
+def apply_ordered_dither(img, bayer_size=4, preserve_color=0):
+    """Bayer matrix dithering"""
+    def generate_bayer(n):
+        if n == 1:
+            return np.array([[0]])
+        m = generate_bayer(n // 2)
+        return np.block([[4 * m, 4 * m + 2],
+                         [4 * m + 3, 4 * m + 1]]) / (n * n)
+
+    bayer_size = max(2, min(32, 1 << (bayer_size - 1).bit_length()))
+    bayer_matrix = generate_bayer(bayer_size) * 255
+
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape
+
+    repeat_h = (h + bayer_size - 1) // bayer_size
+    repeat_w = (w + bayer_size - 1) // bayer_size
+    tiled_bayer = np.tile(bayer_matrix, (repeat_h, repeat_w))[:h, :w]
+
+    mask = (gray > tiled_bayer).astype(np.uint8)
+
+    if preserve_color == 1:
+        result = np.zeros((h, w, 3), dtype=np.uint8)
+        result[mask == 1] = img[mask == 1]
+        return result
+    else:
+        return cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2RGB)
+
+
+def apply_crt_effect(img, scanline_intensity=0.3, scanline_spacing=2,
+                     scanline_thickness=1, pixel_glow=0.2):
+    h, w = img.shape[:2]
+    scanlines = np.zeros((h, w))
+    for i in range(0, h, scanline_spacing):
+        for t in range(scanline_thickness):
+            if i + t < h:
+                scanlines[i + t, :] = scanline_intensity * (1 - t * 0.2)
+
+    blurred = cv2.GaussianBlur(img, (0, 0), sigmaX=0.8, sigmaY=0.3)
+    result = img * (1 - scanlines[..., None]) + blurred * scanlines[..., None] * 0.3
+    result = result * (1 + pixel_glow * 0.5)
+    return np.clip(result, 0, 255).astype('uint8')
+
+
+def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_dir=(1.0, 1.0, 1.0)):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape
+
+    heightmap = cv2.equalizeHist(gray).astype(np.float32) / 255.0
+    heightmap = heightmap ** 0.5
+    heightmap = heightmap * block_size * height_scale
+
+    sobel_x = cv2.Sobel(heightmap, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(heightmap, cv2.CV_64F, 0, 1, ksize=3)
+
+    light_dir = np.array(light_dir)
+    light_dir = light_dir / np.linalg.norm(light_dir)
+
+    normal = np.dstack((-sobel_x, -sobel_y, np.ones_like(heightmap)))
+    normal_norm = normal / np.linalg.norm(normal, axis=2, keepdims=True)
+    shading = np.dot(normal_norm.reshape(-1, 3), light_dir).reshape(h, w)
+
+    result = img * (0.5 + 0.5 * shading[..., None])
+    return cv2.resize(np.clip(result, 0, 255).astype('uint8'),
+                      (img.shape[1], img.shape[0]))
+# endregion
 
 
 # region Pixelizing
