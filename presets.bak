@@ -352,7 +352,8 @@
           "name": "Edge Detection",
           "params": {
             "threshold1": 59,
-            "threshold2": 54
+            "threshold2": 54,
+            "kernel_size": 1
           },
           "visible": true
         }
@@ -374,7 +375,8 @@
           "name": "Edge Detection",
           "params": {
             "threshold1": 0,
-            "threshold2": 500
+            "threshold2": 500,
+            "kernel_size": 1
           },
           "visible": true
         },
@@ -387,6 +389,73 @@
         }
       ],
       "created_at": 1745948303.631325
+    },
+    "Цветной контурный шум": {
+      "filters": [
+        {
+          "name": "Threshold",
+          "params": {
+            "thresh": 184
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": -96,
+            "saturation": 130,
+            "brightness": 100
+          },
+          "visible": true
+        },
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 0,
+            "threshold2": 500,
+            "kernel_size": 1
+          },
+          "visible": true
+        },
+        {
+          "name": "Chromatic Abberation",
+          "params": {
+            "value": 7
+          },
+          "visible": true
+        },
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 2,
+            "method": "quantize",
+            "num_colors": 32
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1745948894.1890054
+    },
+    "Монитор": {
+      "filters": [
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 90,
+            "threshold2": 250,
+            "kernel_size": 3
+          },
+          "visible": true
+        },
+        {
+          "name": "Dotted",
+          "params": {
+            "value": 4
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1745999414.4628627
     }
   }
 }

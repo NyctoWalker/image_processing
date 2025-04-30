@@ -5,11 +5,10 @@ from numba import jit
 
 # region HSB/Pixel modify
 def apply_hsb_adjustment(img, hue, saturation, brightness):
-    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')  # HSV
-    hsv[..., 0] = (hsv[..., 0] + (hue / 2)) % 180  # H
-    hsv[..., 1] = np.clip(hsv[..., 1] * (saturation / 100), 0, 255)  # S
-    hsv[..., 2] = np.clip(hsv[..., 2] * (brightness / 100), 0, 255)  # V
-    return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)  # RGB
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')
+    hsv[..., 0] = (hsv[..., 0] + (hue / 2)) % 180
+    hsv[..., 1:] = np.clip(hsv[..., 1:] * np.array([saturation/100, brightness/100]), 0, 255)
+    return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)
 
 
 def adjust_brightness(img, value):
@@ -53,9 +52,16 @@ def apply_bleach_bypass(img):
 
 
 # region Edge detection
-def apply_canny_thresh(img, threshold1=100, threshold2=250):
+def apply_canny_thresh(img, threshold1=100, threshold2=250, kernel_size=1):
+    fine_high = 150  # На практике не сильно влияет на результат
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    edges = cv2.Canny(gray, threshold1, threshold2)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges_fine = cv2.Canny(blurred, threshold1, fine_high)
+    edges_coarse = cv2.Canny(blurred, threshold2, threshold1)
+    edges = cv2.bitwise_or(edges_fine, edges_coarse)
+    if kernel_size > 1:
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        edges = cv2.morphologyEx(edges, cv2.MORPH_GRADIENT, kernel)
     return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
 # endregion
 
@@ -74,23 +80,26 @@ def resize_image(img, scale_factor=1.0, interpolation='linear'):
     return img
 
 
-def apply_halftone(img, dot_size=10):
-    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-    h, w = gray.shape
-    halftone = np.zeros_like(gray)
-    for y in range(0, h, dot_size):
-        for x in range(0, w, dot_size):
-            block = gray[y:y+dot_size, x:x+dot_size]
-            avg = block.mean()
-            radius = int(dot_size * (1 - avg / 255) / 2)
-            cy, cx = y + dot_size // 2, x + dot_size // 2
-            for i in range(max(0, cy-radius), min(h, cy+radius)):
-                for j in range(max(0, cx-radius), min(w, cx+radius)):
-                    if (i - cy)**2 + (j - cx)**2 <= radius**2:
-                        halftone[i, j] = 0
-                    else:
-                        halftone[i, j] = 255
-    return np.stack((halftone,)*3, axis=-1).astype('uint8')
+def apply_halftone(img, dot_size=4, max_dot_ratio=0.8):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
+    height, width = gray.shape
+    output = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+    spacing = max(2, dot_size)
+    max_dot_ratio = min(0.9, max(0.1, max_dot_ratio))
+
+    for y in range(0, height, spacing):
+        for x in range(0, width, spacing):
+            center_x = min(x + spacing // 2, width - 1)
+            center_y = min(y + spacing // 2, height - 1)
+            brightness = gray[center_y, center_x]
+
+            radius = int((1 - brightness) * (spacing // 2 * max_dot_ratio))
+            if radius > 0:
+                cv2.circle(output, (center_x, center_y), radius,
+                           (0, 0, 0), -1, lineType=cv2.LINE_AA)
+
+    return output
 
 
 def apply_chromatic_aberration(img, shift=2):

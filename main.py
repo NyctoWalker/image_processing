@@ -50,11 +50,12 @@ FILTER_DEFINITIONS = {
     },
     "Edge Detection": {
         "has_params": True,
-        "default_params": {"threshold1": 100, "threshold2": 250},
-        "display_text": lambda p: f"Детекция краёв ({p['threshold1']}-{p['threshold2']})",
+        "default_params": {"threshold1": 50, "threshold2": 200, "kernel_size": 1},
+        "display_text": lambda p: f"Детекция краёв ({p['threshold1']}-{p['threshold2']}, {p['kernel_size']})",
         "dialog_sliders": [
             {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "value_label": lambda v: str(v)},
-            {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 500, "value_label": lambda v: str(v)}
+            {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 300, "value_label": lambda v: str(v)},
+            {"label": "Ядро жирности:", "key": "kernel_size", "min": 1, "max": 5, "value_label": lambda v: str(v)}
         ]
     },
     "Invert": {
@@ -131,7 +132,7 @@ FILTER_DEFINITIONS = {
         "default_params": {"value": 10},
         "display_text": lambda p: f"Точки ({p['value']})",
         "dialog_sliders": [
-            {"label": "Уровни:", "key": "value", "min": 2, "max": 20, "value_label": lambda v: str(v)}
+            {"label": "Уровни:", "key": "value", "min": 4, "max": 20, "value_label": lambda v: str(v)}
         ]
     },
     "Chromatic Abberation": {
@@ -1043,8 +1044,10 @@ class FilterApp(QMainWindow):
                     size += 1
                 return cv2.GaussianBlur(img, (size, size), 0)
             elif filter_name == "Edge Detection":
-                return apply_canny_thresh(img, max(1, params.get('threshold1', 100)),
-                                               max(1, params.get('threshold2', 250)))
+                return apply_canny_thresh(img,
+                                          max(1, params.get('threshold1', 50)),
+                                          max(1, params.get('threshold2', 200)),
+                                          params.get('kernel_size', 1))
             elif filter_name == "Invert":
                 return cv2.bitwise_not(img)
             elif filter_name == "Sepia":

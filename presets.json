@@ -352,7 +352,8 @@
           "name": "Edge Detection",
           "params": {
             "threshold1": 59,
-            "threshold2": 54
+            "threshold2": 54,
+            "kernel_size": 1
           },
           "visible": true
         }
@@ -374,7 +375,8 @@
           "name": "Edge Detection",
           "params": {
             "threshold1": 0,
-            "threshold2": 500
+            "threshold2": 500,
+            "kernel_size": 1
           },
           "visible": true
         },
@@ -410,7 +412,8 @@
           "name": "Edge Detection",
           "params": {
             "threshold1": 0,
-            "threshold2": 500
+            "threshold2": 500,
+            "kernel_size": 1
           },
           "visible": true
         },
@@ -432,6 +435,32 @@
         }
       ],
       "created_at": 1745948894.1890054
+    },
+    "Монитор": {
+      "filters": [
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 90,
+            "threshold2": 250,
+            "kernel_size": 3
+          },
+          "visible": true
+        },
+        {
+          "name": "Dotted",
+          "params": {
+            "value": 4
+          },
+          "visible": true
+        },
+        {
+          "name": "Invert",
+          "params": {},
+          "visible": true
+        }
+      ],
+      "created_at": 1746004135.1157784
     }
   }
 }
