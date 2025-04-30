@@ -71,6 +71,7 @@ class ImageViewer(QLabel):
             self.mouse_pos_label.setText("Позиция: N/A")
             self.zoom_label.setText("Масштаб: N/A")
 
+# region Controls
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.original_pixmap is None:
             return
@@ -194,6 +195,7 @@ class ImageViewer(QLabel):
         self.ensure_visible()
         self.update_display()
         self.update_status_bar()
+# endregion
 
     def ensure_visible(self):
         if self.fit_to_window or not self.original_pixmap:

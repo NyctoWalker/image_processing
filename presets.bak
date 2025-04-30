@@ -359,15 +359,34 @@
       ],
       "created_at": 1745856202.8239331
     },
-    "d": {
+    "Расслоение": {
       "filters": [
         {
-          "name": "Sepia",
-          "params": {},
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": -96,
+            "saturation": 130,
+            "brightness": 100
+          },
+          "visible": true
+        },
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 0,
+            "threshold2": 500
+          },
+          "visible": true
+        },
+        {
+          "name": "Chromatic Abberation",
+          "params": {
+            "value": 7
+          },
           "visible": true
         }
       ],
-      "created_at": 1745856510.2027771
+      "created_at": 1745948303.631325
     }
   }
 }

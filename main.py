@@ -5,10 +5,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox,
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
+    QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QSettings, QTimer
-from PyQt6.QtGui import QImage, QPixmap, QAction
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QAction
 import cv2
 import numpy as np
 import time
@@ -18,7 +18,7 @@ from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
     pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, \
-    apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration
+    apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -1006,7 +1006,28 @@ class FilterApp(QMainWindow):
             self.image_viewer.set_viewport_state(view_state)
 
     def apply_single_filter(self, img, filter_name, params):
+        in_preview = self.preview_mode and (
+            filter_name == self.preview_filter_name
+            or (
+               0 <= self.preview_filter_index < len(self.filters)
+               and
+               self.filters[self.preview_filter_index]['name'] == filter_name
+            )
+        )
+        original_size = img.shape[:2]
+
         try:
+            if in_preview and filter_name in {"Pixel Art", "otherfilter"} and max(original_size) > 1000:
+                scale = 1500 / max(original_size)
+                small_img = cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+                if filter_name == "Pixel Art":
+                    result = self._apply_pixel_art(small_img, params)
+                elif filter_name == "otherfilter":
+                    result = small_img
+
+                return cv2.resize(result, (original_size[1], original_size[0]), interpolation=cv2.INTER_NEAREST)
+
             if filter_name == "HSB Adjustment":
                 return apply_hsb_adjustment(
                     img,
@@ -1022,13 +1043,8 @@ class FilterApp(QMainWindow):
                     size += 1
                 return cv2.GaussianBlur(img, (size, size), 0)
             elif filter_name == "Edge Detection":
-                gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-                edges = cv2.Canny(
-                    gray,
-                    max(1, params.get('threshold1', 100)),
-                    max(1, params.get('threshold2', 250))
-                )
-                return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+                return apply_canny_thresh(img, max(1, params.get('threshold1', 100)),
+                                               max(1, params.get('threshold2', 250)))
             elif filter_name == "Invert":
                 return cv2.bitwise_not(img)
             elif filter_name == "Sepia":
@@ -1053,22 +1069,7 @@ class FilterApp(QMainWindow):
                     QMessageBox.warning(self, "Ошибка", "Ядро должно быть квадратным с нечетными размерами")
                     return img
             elif filter_name == "Pixel Art":
-                method = params.get("method", "quantize")
-                pixel_size = params.get("pixel_size", 8)
-
-                if method == "simple":
-                    return pixelize_image(img, pixel_size)
-                elif method == "quantize":
-                    num_colors = params.get("num_colors", 16)
-                    return pixelize_kmeans(img, pixel_size, num_colors)
-                elif method == "edge":
-                    edge_threshold = params.get("edge_threshold", 30)
-                    return pixelize_edge_preserving(img, pixel_size, edge_threshold)
-                elif method == "dither":
-                    dither_strength = params.get("dither_strength", 50) / 100.0
-                    return pixelize_dither(img, pixel_size, dither_strength)
-                else:
-                    return pixelize_image(img, pixel_size)
+                return self._apply_pixel_art(img, params)
             elif filter_name == "Resize":
                 scale = params.get('scale', 100) / 100.0
                 interp = params.get('interpolation', 'linear').lower()
@@ -1082,6 +1083,24 @@ class FilterApp(QMainWindow):
         except Exception as e:
             print(f"Error applying filter {filter_name}: {str(e)}")
             return img
+
+    def _apply_pixel_art(self, img, params):
+        method = params.get("method", "quantize")
+        pixel_size = params.get("pixel_size", 8)
+
+        if method == "simple":
+            return pixelize_image(img, pixel_size)
+        elif method == "quantize":
+            num_colors = params.get("num_colors", 16)
+            return pixelize_kmeans(img, pixel_size, num_colors)
+        elif method == "edge":
+            edge_threshold = params.get("edge_threshold", 30)
+            return pixelize_edge_preserving(img, pixel_size, edge_threshold)
+        elif method == "dither":
+            dither_strength = params.get("dither_strength", 50) / 100.0
+            return pixelize_dither(img, pixel_size, dither_strength)
+        else:
+            return pixelize_image(img, pixel_size)
 
     def resizeEvent(self, event):
         self.update_display()

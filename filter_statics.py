@@ -52,6 +52,14 @@ def apply_bleach_bypass(img):
 # endregion
 
 
+# region Edge detection
+def apply_canny_thresh(img, threshold1=100, threshold2=250):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, threshold1, threshold2)
+    return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+# endregion
+
+
 def resize_image(img, scale_factor=1.0, interpolation='linear'):
     inter = {
         'nearest': cv2.INTER_NEAREST,
