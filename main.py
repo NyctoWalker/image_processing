@@ -19,7 +19,7 @@ from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
     pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, \
     apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, \
-    apply_ordered_dither, apply_crt_effect, apply_voxel_effect
+    apply_ordered_dither, apply_crt_effect, apply_voxel_effect, apply_blur
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -30,7 +30,13 @@ FILTER_DEFINITIONS = {
             {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "value_label": lambda v: f"{v}°"},
             {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"},
             {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"}
-        ]
+        ],
+        "apply": lambda img, params: apply_hsb_adjustment(
+            img,
+            params.get('hue', 0),
+            params.get('saturation', 100),
+            params.get('brightness', 100)
+        )
     },
     "Brightness": {
         "has_params": True,
@@ -38,7 +44,8 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"Яркость ({p['value']})",
         "dialog_sliders": [
             {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "value_label": lambda v: str(v)}
-        ]
+        ],
+        "apply": lambda img, params: adjust_brightness(img, params.get('value', 0))
     },
     "Blur": {
         "has_params": True,
@@ -47,7 +54,9 @@ FILTER_DEFINITIONS = {
         "dialog_sliders": [
             {"label": "Размер ядра:", "key": "size", "min": 1, "max": 31,
              "value_label": lambda v: str(v), "odd_only": True}
-        ]
+        ],
+        "apply": lambda img, params: apply_blur(img, max(1, params.get('size', 5))
+        )
     },
     "Edge Detection": {
         "has_params": True,
@@ -59,23 +68,34 @@ FILTER_DEFINITIONS = {
             {"label": "Ядро жирности:", "key": "kernel_size", "min": 1, "max": 5, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"}
-        ]
+        ],
+        "apply": lambda img, params: apply_canny_thresh(
+            img,
+            max(1, params.get('threshold1', 50)),
+            max(1, params.get('threshold2', 200)),
+            params.get('kernel_size', 1),
+            params.get('color', 0)
+        )
     },
     "Invert": {
         "has_params": False,
-        "display_text": lambda p: "Инверсия"
+        "display_text": lambda p: "Инверсия",
+        "apply": lambda img, params: cv2.bitwise_not(img)
     },
     "Sepia": {
         "has_params": False,
-        "display_text": lambda p: "Сепия"
+        "display_text": lambda p: "Сепия",
+        "apply": lambda img, params: apply_sepia(img)
     },
     "Grayscale": {
         "has_params": False,
-        "display_text": lambda p: "Ч/Б (градации серого)"
+        "display_text": lambda p: "Ч/Б (градации серого)",
+        "apply": lambda img, params: apply_grayscale(img)
     },
     "Bleach": {
         "has_params": False,
-        "display_text": lambda p: "Выцветание (Ч/Б с контрастом)"
+        "display_text": lambda p: "Выцветание (Ч/Б с контрастом)",
+        "apply": lambda img, params: apply_bleach_bypass(img)
     },
     "Custom Kernel": {
         "has_params": True,
@@ -100,7 +120,8 @@ FILTER_DEFINITIONS = {
             "dither_strength": 50
         },
         "display_text": lambda p: f"Пиксель-арт ({p['method']}, {p['pixel_size']}px)",
-        "custom_dialog": True
+        "custom_dialog": True,
+        "apply": "_apply_pixel_art"
     },
     "Resize": {
         "has_params": True,
@@ -120,7 +141,8 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"Пастеризация ({p['levels']})",
         "dialog_sliders": [
             {"label": "Уровни:", "key": "levels", "min": 2, "max": 12, "value_label": lambda v: str(v)}
-        ]
+        ],
+        "apply": lambda img, params: apply_posterize(img, params.get('levels', 4))
     },
     "Threshold": {
         "has_params": True,
@@ -130,7 +152,8 @@ FILTER_DEFINITIONS = {
             {"label": "Порог:", "key": "thresh", "min": 1, "max": 254, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"}
-        ]
+        ],
+        "apply": lambda img, params: apply_threshold(img, params.get('thresh', 128), params.get('color', 0))
     },
     "Bayer Dithering": {
         "has_params": True,
@@ -140,7 +163,8 @@ FILTER_DEFINITIONS = {
             {"label": "Размер ядра:", "key": "size", "min": 1, "max": 5, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"},
-        ]
+        ],
+        "apply": lambda img, params: apply_ordered_dither(img, int(2 ** params.get("size", 2)), params.get("color", 0))
     },
     "Dotted": {
         "has_params": True,
@@ -150,7 +174,8 @@ FILTER_DEFINITIONS = {
             {"label": "Уровни:", "key": "size", "min": 4, "max": 20, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"},
-        ]
+        ],
+        "apply": lambda img, params: apply_halftone(img, params.get("size", 10), preserve_color=params.get("color", 0))
     },
     "Chromatic Abberation": {
         "has_params": True,
@@ -158,7 +183,8 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"Хроматическая абберация ({p['value']})",
         "dialog_sliders": [
             {"label": "Смещение:", "key": "value", "min": 2, "max": 50, "value_label": lambda v: str(v)}
-        ]
+        ],
+        "apply": lambda img, params: apply_chromatic_aberration(img, params.get("value", 10))
     },
     "CRT": {
         "has_params": True,
@@ -169,7 +195,14 @@ FILTER_DEFINITIONS = {
             {"label": "Отступы:", "key": "scan_space", "min": 2, "max": 10, "value_label": lambda v: str(v)},
             {"label": "Жирность:", "key": "scanline_thickness", "min": 1, "max": 10, "value_label": lambda v: str(v)},
             {"label": "Смещение цвета:", "key": "pixel_diff", "min": 0, "max": 30, "value_label": lambda v: str(v)}
-        ]
+        ],
+        "apply": lambda img, params: apply_crt_effect(
+            img,
+            scanline_intensity=params.get("opacity", 3)/10,
+            scanline_spacing=params.get("scan_space", 2),
+            scanline_thickness=params.get("scanline_thickness", 1),
+            pixel_glow=params.get("pixel_diff", 3)/10
+        )
     },
     "Voxelize Pixels": {
         "has_params": True,
@@ -178,7 +211,12 @@ FILTER_DEFINITIONS = {
         "dialog_sliders": [
             {"label": "Размер блока:", "key": "block_size", "min": 0, "max": 24, "value_label": lambda v: str(v)},
             {"label": "Сила тени:", "key": "height_scale", "min": 0, "max": 20, "value_label": lambda v: str(v)}
-        ]
+        ],
+        "apply": lambda img, params: apply_voxel_effect(
+            img,
+            params.get("block_size", 3),
+            params.get("height_scale", 3)/10
+        )
     },
 }
 
@@ -200,7 +238,7 @@ FILTER_DISPLAY_NAMES = {
     "Dotted": "Точки",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
-    "Voxelize Pixels": "Вокселизация пикселей",
+    "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
     "Test": "Тест",
 }
 
@@ -856,7 +894,7 @@ class FilterApp(QMainWindow):
         if not FILTER_DEFINITIONS[filter_name]["has_params"]:
             return
 
-        # СОхранение превью на случай отмены
+        # Сохранение превью на случай отмены
         previous_preview_state = {
             'mode': self.preview_mode,
             'index': self.preview_filter_index,
@@ -1070,77 +1108,34 @@ class FilterApp(QMainWindow):
 
                 return cv2.resize(result, (original_size[1], original_size[0]), interpolation=cv2.INTER_NEAREST)
 
-            match filter_name:
-                case "HSB Adjustment":
-                    return apply_hsb_adjustment(
-                        img,
-                        params.get('hue', 0),
-                        params.get('saturation', 100),
-                        params.get('brightness', 100)
-                    )
-                case "Brightness":
-                    return adjust_brightness(img, params.get('value', 0))
-                case "Blur":
-                    size = max(1, params.get('size', 5))
-                    if size % 2 == 0:
-                        size += 1
-                    return cv2.GaussianBlur(img, (size, size), 0)
-                case "Edge Detection":
-                    return apply_canny_thresh(
-                        img,
-                        max(1, params.get('threshold1', 50)),
-                        max(1, params.get('threshold2', 200)),
-                        params.get('kernel_size', 1),
-                        params.get('color', 0)
-                    )
-                case "Invert":
-                    return cv2.bitwise_not(img)
-                case "Sepia":
-                    return apply_sepia(img)
-                case "Grayscale":
-                    return apply_grayscale(img)
-                case "Bleach":
-                    return apply_bleach_bypass(img)
-                case "Posterize":
-                    return apply_posterize(img, params.get('levels', 4))
-                case "Threshold":
-                    return apply_threshold(img, params.get('thresh', 128), params.get('color', 0))
-                case "Bayer Dithering":
-                    return apply_ordered_dither(img, int(2 ** params.get("size", 2)), params.get("color", 0))
-                case "Custom Kernel":
-                    kernel = params.get('kernel', np.array([
-                        [0, -1, 0],
-                        [-1, 5, -1],
-                        [0, -1, 0]
-                    ]))
-                    if kernel.shape[0] == kernel.shape[1] and kernel.shape[0] % 2 == 1:
-                        return cv2.filter2D(img, -1, kernel)
-                    else:
-                        QMessageBox.warning(self, "Ошибка", "Ядро должно быть квадратным с нечетными размерами")
+            filter_def = FILTER_DEFINITIONS.get(filter_name)
+            if filter_def and "apply" in filter_def:
+                apply_func = filter_def["apply"]
+                if isinstance(apply_func, str):  # Если метод определён строкой
+                    method = getattr(self, apply_func)
+                    return method(img, params)
+                return apply_func(img, params)
+            else:
+                match filter_name:
+                    case "Custom Kernel":
+                        kernel = params.get('kernel', np.array([
+                            [0, -1, 0],
+                            [-1, 5, -1],
+                            [0, -1, 0]
+                        ]))
+                        if kernel.shape[0] == kernel.shape[1] and kernel.shape[0] % 2 == 1:
+                            return cv2.filter2D(img, -1, kernel)
+                        else:
+                            QMessageBox.warning(self, "Ошибка", "Ядро должно быть квадратным с нечетными размерами")
+                            return img
+                    case "Resize":
+                        return resize_image(
+                            img,
+                            params.get('scale', 100) / 100.0,
+                            params.get('interpolation', 'linear').lower()
+                        )
+                    case _:
                         return img
-                case "Pixel Art":
-                    return self._apply_pixel_art(img, params)
-                case "Resize":
-                    return resize_image(
-                        img,
-                        params.get('scale', 100) / 100.0,
-                        params.get('interpolation', 'linear').lower()
-                    )
-                case "Dotted":
-                    return apply_halftone(img, params.get("size", 10), preserve_color=params.get("color", 0))
-                case "Chromatic Abberation":
-                    return apply_chromatic_aberration(img, params.get("value", 10))
-                case "Voxelize Pixels":
-                    return apply_voxel_effect(img, params.get("block_size", 3), params.get("height_scale", 3)/10)
-                case "CRT":
-                    return apply_crt_effect(img,
-                                            scanline_intensity=params.get("opacity", 3)/10,
-                                            scanline_spacing=params.get("scan_space", 2),
-                                            scanline_thickness=params.get("scanline_thickness", 1),
-                                            pixel_glow=params.get("pixel_diff", 3)/10
-                                            )
-                case _:
-                    return img
 
         except Exception as e:
             print(f"Error applying filter {filter_name}: {str(e)}")

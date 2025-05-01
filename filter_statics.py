@@ -16,6 +16,12 @@ def adjust_brightness(img, value):
 # endregion
 
 
+def apply_blur(img, size):
+    if size % 2 == 0:
+        size += 1
+    return cv2.GaussianBlur(img, (size, size), 0)
+
+
 # region Simple filters
 def apply_sepia(img):
     sepia_filter = np.array([
