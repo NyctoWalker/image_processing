@@ -86,14 +86,15 @@ def apply_canny_thresh(img, threshold1=100, threshold2=250, kernel_size=1, prese
 # endregion
 
 
-def resize_image(img, scale_factor=1.0, interpolation='linear'):
-    inter = {
-        'nearest': cv2.INTER_NEAREST,
-        'linear': cv2.INTER_LINEAR,
-        'cubic': cv2.INTER_CUBIC,
-        'area': cv2.INTER_AREA,
-        'lanczos': cv2.INTER_LANCZOS4
-    }.get(interpolation.lower(), cv2.INTER_LINEAR)
+def resize_image(img, scale_factor=1.0, method=1):
+    inter = [
+        cv2.INTER_NEAREST,
+        cv2.INTER_LINEAR,
+        cv2.INTER_CUBIC,
+        cv2.INTER_AREA,
+        cv2.INTER_LANCZOS4
+    ]
+    inter = inter[method]
 
     if scale_factor != 1.0:
         return cv2.resize(img, None, fx=scale_factor, fy=scale_factor, interpolation=inter)

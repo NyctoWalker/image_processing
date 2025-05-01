@@ -125,15 +125,18 @@ FILTER_DEFINITIONS = {
     },
     "Resize": {
         "has_params": True,
-        "default_params": {"scale": 100, "interpolation": "linear"},
+        "default_params": {"scale": 20, "interpolation": 1},
         "display_text": lambda p: f"Изменение размера ({p['scale']}%)",
         "dialog_sliders": [
-            {"label": "Scale:", "key": "scale", "min": 10, "max": 400, "value_label": lambda v: f"{v}%"},
+            {"label": "Размер:", "key": "scale", "min": 2, "max": 100, "value_label": lambda v: f"{v*5}%"},
+            {"label": "Метод:", "key": "interpolation", "min": 0, "max": 4, "step": 1,
+             "value_label": lambda v: ["Nearest", "Linear", "Cubic", "Area", "Lanczos"][int(v)]},
         ],
-        "dialog_comboboxes": [
-            {"label": "Interpolation:", "key": "interpolation",
-             "items": ["Nearest", "Linear", "Cubic", "Area", "Lanczos"]}
-        ]
+        "apply": lambda img, params: resize_image(
+            img,
+            params.get('scale', 100) / 100.0 * 5.0,
+            params.get('interpolation', 1)
+        )
     },
     "Posterize": {
         "has_params": True,
@@ -304,6 +307,12 @@ class FilterDialog(QDialog):
         for slider_def in self.filter_def["dialog_sliders"]:
             slider = QSlider(Qt.Orientation.Horizontal)
             slider.setRange(slider_def["min"], slider_def["max"])
+
+            _step = 2
+            if "step" in slider_def:
+                _step = slider_def["step"]
+            slider.setSingleStep(_step)
+            slider.setPageStep(_step)
 
             value = self.current_params.get(slider_def["key"], 0)
             if "scale" in slider_def:
@@ -1128,12 +1137,6 @@ class FilterApp(QMainWindow):
                         else:
                             QMessageBox.warning(self, "Ошибка", "Ядро должно быть квадратным с нечетными размерами")
                             return img
-                    case "Resize":
-                        return resize_image(
-                            img,
-                            params.get('scale', 100) / 100.0,
-                            params.get('interpolation', 'linear').lower()
-                        )
                     case _:
                         return img
 
