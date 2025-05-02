@@ -19,7 +19,7 @@ from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
     pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, \
     apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, \
-    apply_ordered_dither, apply_crt_effect, apply_voxel_effect, apply_blur
+    apply_ordered_dither, apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -27,9 +27,11 @@ FILTER_DEFINITIONS = {
         "default_params": {"hue": 0, "saturation": 100, "brightness": 100},
         "display_text": lambda p: f"HSB (H:{p['hue']}°, S:{p['saturation']}%, B:{p['brightness']}%)",
         "dialog_sliders": [
-            {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "value_label": lambda v: f"{v}°"},
-            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"},
-            {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "value_label": lambda v: f"{v}%"}
+            {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "step": 10, "value_label": lambda v: f"{v}°"},
+            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 200, "step": 10,
+             "value_label": lambda v: f"{v}%"},
+            {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "step": 10,
+             "value_label": lambda v: f"{v}%"}
         ],
         "apply": lambda img, params: apply_hsb_adjustment(
             img,
@@ -43,7 +45,7 @@ FILTER_DEFINITIONS = {
         "default_params": {"value": 0},
         "display_text": lambda p: f"Яркость ({p['value']})",
         "dialog_sliders": [
-            {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "value_label": lambda v: str(v)}
+            {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "step": 10, "value_label": lambda v: str(v)}
         ],
         "apply": lambda img, params: adjust_brightness(img, params.get('value', 0))
     },
@@ -63,9 +65,12 @@ FILTER_DEFINITIONS = {
         "default_params": {"threshold1": 50, "threshold2": 200, "kernel_size": 1, "color": 0},
         "display_text": lambda p: f"Детекция краёв ({p['threshold1']}-{p['threshold2']}, {p['kernel_size']}, цвет {p['color']})",
         "dialog_sliders": [
-            {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "value_label": lambda v: str(v)},
-            {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 300, "value_label": lambda v: str(v)},
-            {"label": "Ядро жирности:", "key": "kernel_size", "min": 1, "max": 5, "value_label": lambda v: str(v)},
+            {"label": "Порог 1:", "key": "threshold1", "min": 0, "max": 500, "step": 10,
+             "value_label": lambda v: str(v)},
+            {"label": "Порог 2:", "key": "threshold2", "min": 0, "max": 300, "step": 10,
+             "value_label": lambda v: str(v)},
+            {"label": "Ядро жирности:", "key": "kernel_size", "min": 1, "max": 5, "step": 1,
+             "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"}
         ],
@@ -147,12 +152,34 @@ FILTER_DEFINITIONS = {
         ],
         "apply": lambda img, params: apply_posterize(img, params.get('levels', 4))
     },
+    "Stepped Gradient": {
+        "has_params": True,
+        "default_params": {"hue": 60, "palette": 1, "color_count": 2, "darken": 5},
+        "display_text": lambda p: f"Ступенчатый градиент ({p['hue']}, "
+                                  f"{p['color_count']} цветов, темн. {p['darken'] / 10}), палитра {p['palette']}",
+        "dialog_sliders": [
+            {"label": "Оттенок:", "key": "hue", "min": 0, "max": 360, "step": 10, "value_label": lambda v: str(v)},
+            {"label": "Палитра:", "key": "palette", "min": 0, "max": 7, "step": 1,
+             "value_label": lambda v: ["Монохромная", "Натуральная", "Аналоговая", "Линейная",
+                                       "Экстремальная линейная", "Геометрическая", "Пастель", "Холод"][int(v)]},
+            {"label": "Количество цветов:", "key": "color_count", "min": 2, "max": 16, "value_label": lambda v: str(v)},
+            {"label": "Фактор затемнения:", "key": "darken", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: str(v / 10)},
+        ],
+        "apply": lambda img, params: apply_multitone_gradient(
+            img,
+            params.get("hue", 60),
+            params.get("palette", 1),
+            params.get("color_count", 2),
+            params.get("darken", 5) / 10
+        )
+    },
     "Threshold": {
         "has_params": True,
         "default_params": {"thresh": 128, "color": 0},
         "display_text": lambda p: f"Двоичный порог ({p['thresh']}, цвет {p['color']})",
         "dialog_sliders": [
-            {"label": "Порог:", "key": "thresh", "min": 1, "max": 254, "value_label": lambda v: str(v)},
+            {"label": "Порог:", "key": "thresh", "min": 1, "max": 254, "step": 5, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"}
         ],
@@ -163,7 +190,7 @@ FILTER_DEFINITIONS = {
         "default_params": {"size": 2, "color": 0},
         "display_text": lambda p: f"Дизеринг Байеса ({p['size']}, цвет {p['color']})",
         "dialog_sliders": [
-            {"label": "Размер ядра:", "key": "size", "min": 1, "max": 5, "value_label": lambda v: str(v)},
+            {"label": "Размер ядра:", "key": "size", "min": 1, "max": 5, "step": 1, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
              "value_label": lambda v: "Нет" if v == 0 else "Да"},
         ],
@@ -236,6 +263,7 @@ FILTER_DISPLAY_NAMES = {
     "Pixel Art": "Пиксель-арт",
     "Resize": "Изменение размера",
     "Posterize": "Пастеризация",
+    "Stepped Gradient": "Ступенчатый градиент",
     "Threshold": "Двоичный порог",
     "Bayer Dithering": "Дизеринг Байеса",
     "Dotted": "Точки",
@@ -1047,31 +1075,36 @@ class FilterApp(QMainWindow):
                 if self.preview_filter_index < 0:
                     preview_base = current_image.copy()
                 else:
+                    # Используем кэшированные картинки если есть
                     preview_base = self.original_image.copy()
                     for i in range(self.preview_filter_index):
-                        if self.filters[i]['visible']:
+                        if not self.filters[i]['visible']:
+                            continue
+
+                        if i < len(self.cache) and self.cache[i] is not None and not self.dirty_flags[i]:
+                            preview_base = self.cache[i].copy()
+                        else:
                             preview_base = self.apply_single_filter(
                                 preview_base,
                                 self.filters[i]['name'],
                                 self.filters[i]['params']
                             )
 
-                # Применение превью
+                # Наложение текущего фильтра если есть превью
                 preview_image = self.apply_single_filter(
                     preview_base,
                     self.preview_filter_name,
                     self.preview_filter_params
                 )
 
-                # Остальные фильтры после превью
-                if self.preview_filter_index >= 0:
-                    for i in range(self.preview_filter_index + 1, len(self.filters)):
-                        if self.filters[i]['visible']:
-                            preview_image = self.apply_single_filter(
-                                preview_image,
-                                self.filters[i]['name'],
-                                self.filters[i]['params']
-                            )
+                # Последующие фильтры
+                for i in range(self.preview_filter_index + 1, len(self.filters)):
+                    if self.filters[i]['visible']:
+                        preview_image = self.apply_single_filter(
+                            preview_image,
+                            self.filters[i]['name'],
+                            self.filters[i]['params']
+                        )
 
                 current_image = preview_image
 
