@@ -19,7 +19,8 @@ from image_viewer import ImageViewer
 from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixelize_image, pixelize_kmeans, \
     pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
-    apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast
+    apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
+    apply_duotone_gradient
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -181,6 +182,25 @@ FILTER_DEFINITIONS = {
             params.get("darken", 5) / 10
         )
     },
+    "Duotone Gradient": {
+        "has_params": True,
+        "default_params": {"hue1": 120, "hue2": 90, "blend": 0},
+        "display_text": lambda p: f"Двухтоновый градиент ({p['hue1']}-{p['hue2']}, режим {p['blend']})",
+        "dialog_sliders": [
+            {"label": "Тёмный оттенок:", "key": "hue1", "min": 0, "max": 180, "step": 10,
+             "value_label": lambda v: str(v)},
+            {"label": "Светлый оттенок:", "key": "hue2", "min": 0, "max": 180, "step": 10,
+             "value_label": lambda v: str(v)},
+            {"label": "Режим смешивания:", "key": "blend", "min": 0, "max": 2, "step": 1,
+             "value_label": lambda v: ["Линейный", "Сигмоида", "Экспонента"][int(v)]}
+        ],
+        "apply": lambda img, params: apply_duotone_gradient(
+            img,
+            params.get("hue1", 0),
+            params.get("hue2", 180),
+            blend_mode=params.get("blend", 0)
+        )
+    },
     "Threshold": {
         "has_params": True,
         "default_params": {"thresh": 128, "color": 0},
@@ -271,6 +291,7 @@ FILTER_DISPLAY_NAMES = {
     "Resize": "Изменение размера",
     "Posterize": "Пастеризация",
     "Stepped Gradient": "Ступенчатый градиент",
+    "Duotone Gradient": "Двухтоновый градиент",
     "Threshold": "Двоичный порог",
     "Bayer Dithering": "Дизеринг Байеса",
     "Dotted": "Точки",

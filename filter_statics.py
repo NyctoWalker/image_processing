@@ -64,15 +64,6 @@ def apply_bleach_bypass(img):
     desat = (0.7 * gray + 0.3 * img.mean(axis=2))
     high_contrast = np.clip((desat - 128) * 1.5 + 128, 0, 255)
     return np.stack((high_contrast,)*3, axis=-1).astype('uint8')
-
-
-def apply_duotone(img, color1=(50, 50, 200), color2=(200, 150, 50)):
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    gray_norm = gray / 255.0
-    result = np.zeros_like(img)
-    for c in range(3):
-        result[..., c] = color1[c] * (1 - gray_norm) + color2[c] * gray_norm
-    return result.astype('uint8')
 # endregion
 
 
@@ -251,6 +242,33 @@ def apply_multitone_gradient(img, hue_base=0, palette_type=0, color_count=4, dar
         result_hsv[mask, 2] = palette[i][2]
 
     return cv2.cvtColor(result_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
+
+def apply_duotone_gradient(img,
+                           hue1=120, hue2=20,
+                           saturation1=220, saturation2=150,
+                           brightness1=100, brightness2=220,
+                           blend_mode=0):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    gray_norm = gray / 255.0
+
+    if blend_mode == 1:  # Сигмоида
+        gray_norm = 1 / (1 + np.exp(-10 * (gray_norm - 0.5)))
+    elif blend_mode == 2:  # Геометрическая прогрессия
+        gray_norm = np.power(gray_norm, 2.0)
+
+    color1_rgb = np.array(cv2.cvtColor(
+        np.uint8([[[hue1 % 180, np.clip(saturation1, 0, 255), np.clip(brightness1, 0, 255)]]]), cv2.COLOR_HSV2RGB)[0, 0]
+    )
+    color2_rgb = np.array(cv2.cvtColor(
+        np.uint8([[[hue2 % 180, np.clip(saturation2, 0, 255), np.clip(brightness2, 0, 255)]]]), cv2.COLOR_HSV2RGB)[0, 0]
+    )
+
+    result = np.zeros_like(img, dtype=np.float32)
+    for c in range(3):
+        result[..., c] = color1_rgb[c] * (1 - gray_norm) + color2_rgb[c] * gray_norm
+
+    return result.astype('uint8')
 # endregion
 
 
