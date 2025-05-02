@@ -543,7 +543,7 @@
           "params": {
             "hue1": 129,
             "hue2": 0,
-            "blend": 1
+            "blend": 2
           },
           "visible": true
         },
@@ -554,9 +554,17 @@
             "color": 1
           },
           "visible": true
+        },
+        {
+          "name": "Dotted",
+          "params": {
+            "size": 5,
+            "color": 1
+          },
+          "visible": false
         }
       ],
-      "created_at": 1746213584.3983307
+      "created_at": 1746215781.6923923
     }
   }
 }

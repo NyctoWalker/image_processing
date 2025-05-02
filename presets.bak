@@ -535,6 +535,28 @@
         }
       ],
       "created_at": 1746022402.4757707
+    },
+    "Комикс": {
+      "filters": [
+        {
+          "name": "Duotone Gradient",
+          "params": {
+            "hue1": 129,
+            "hue2": 0,
+            "blend": 1
+          },
+          "visible": true
+        },
+        {
+          "name": "Bayer Dithering",
+          "params": {
+            "size": 2,
+            "color": 1
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746213584.3983307
     }
   }
 }

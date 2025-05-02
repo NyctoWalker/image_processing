@@ -1023,11 +1023,15 @@ class FilterApp(QMainWindow):
             item = QListWidgetItem(self.active_filters)
             widget = FilterListItem(display_text)
             widget.set_checked(filter_data.get('visible', True))
-            widget.checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_filter_visibility(idx, state))
+            widget.checkbox.stateChanged.connect(lambda state, item=item: self.handle_checkbox_changed(item, state))
 
             item.setSizeHint(widget.sizeHint())
             self.active_filters.addItem(item)
             self.active_filters.setItemWidget(item, widget)
+
+    def handle_checkbox_changed(self, item, state):
+        index = self.active_filters.row(item)
+        self.toggle_filter_visibility(index, state)
 # endregion
 
 # region visibility
