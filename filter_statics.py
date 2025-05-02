@@ -11,8 +11,12 @@ def apply_hsb_adjustment(img, hue, saturation, brightness):
     return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)
 
 
-def adjust_brightness(img, value):
-    return np.clip(img.astype('int32') + value, 0, 255).astype('uint8')
+def adjust_brightness_contrast(img, brightness, contrast):
+    contrast = contrast / 100.0
+
+    img = img.astype('float32')
+    img = (img - 128) * contrast + 128 + brightness
+    return np.clip(img, 0, 255).astype('uint8')
 # endregion
 
 

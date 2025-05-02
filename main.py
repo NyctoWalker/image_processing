@@ -16,10 +16,10 @@ import os
 
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
-from filter_statics import apply_sepia, apply_hsb_adjustment, adjust_brightness, resize_image, \
-    pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, \
-    apply_threshold, apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, \
-    apply_ordered_dither, apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient
+from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixelize_image, pixelize_kmeans, \
+    pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
+    apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
+    apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -28,7 +28,7 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"HSB (H:{p['hue']}°, S:{p['saturation']}%, B:{p['brightness']}%)",
         "dialog_sliders": [
             {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "step": 10, "value_label": lambda v: f"{v}°"},
-            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 200, "step": 10,
+            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 300, "step": 20,
              "value_label": lambda v: f"{v}%"},
             {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "step": 10,
              "value_label": lambda v: f"{v}%"}
@@ -40,14 +40,21 @@ FILTER_DEFINITIONS = {
             params.get('brightness', 100)
         )
     },
-    "Brightness": {
+    "Brightness/Contrast": {
         "has_params": True,
-        "default_params": {"value": 0},
-        "display_text": lambda p: f"Яркость ({p['value']})",
+        "default_params": {"brightness": 0, "contrast": 100},
+        "display_text": lambda p: f"Яркость/Контрастность (Я {p['brightness']}, К {p['contrast']}%)",
         "dialog_sliders": [
-            {"label": "Яркость:", "key": "value", "min": -100, "max": 100, "step": 10, "value_label": lambda v: str(v)}
+            {"label": "Яркость:", "key": "brightness", "min": -100, "max": 100, "step": 10,
+             "value_label": lambda v: str(v)},
+            {"label": "Контраст:", "key": "contrast", "min": 0, "max": 200, "step": 10,
+             "value_label": lambda v: f"{v}%"}
         ],
-        "apply": lambda img, params: adjust_brightness(img, params.get('value', 0))
+        "apply": lambda img, params: adjust_brightness_contrast(
+            img,
+            params.get('brightness', 0),
+            params.get('contrast', 100)
+        )
     },
     "Blur": {
         "has_params": True,
@@ -252,7 +259,7 @@ FILTER_DEFINITIONS = {
 
 FILTER_DISPLAY_NAMES = {
     "HSB Adjustment": "Цветокоррекция HSB",
-    "Brightness": "Яркость",
+    "Brightness/Contrast": "Яркость/Контрастность",
     "Blur": "Размытие (Гаусс)",
     "Edge Detection": "Детекция краёв",
     "Invert": "Инверсия",
