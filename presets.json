@@ -648,6 +648,38 @@
         }
       ],
       "created_at": 1746252946.580325
+    },
+    "Psychic": {
+      "filters": [
+        {
+          "name": "Bleach",
+          "params": {},
+          "visible": true
+        },
+        {
+          "name": "Sepia",
+          "params": {},
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": -120,
+            "saturation": 300,
+            "brightness": 110
+          },
+          "visible": true
+        },
+        {
+          "name": "Threshold",
+          "params": {
+            "thresh": 31,
+            "color": 1
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746255542.447318
     }
   }
 }

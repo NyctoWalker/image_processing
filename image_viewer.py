@@ -77,7 +77,7 @@ class ImageViewer(QLabel):
             return
 
         try:
-            pos = event.position()  # This is QPointF
+            pos = event.position()  # QPointF
             img_pos = self.widget_to_image_pos(pos)
             if img_pos:
                 self.mouse_pos_label.setText(f"Позиция: {int(img_pos.x()+1)}, {int(img_pos.y()+1)}")

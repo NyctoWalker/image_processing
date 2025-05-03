@@ -217,6 +217,234 @@ def apply_crt_effect(img, scanline_intensity=0.3, scanline_spacing=2,
     result = img * (1 - scanlines[..., None]) + blurred * scanlines[..., None] * 0.3
     result = result * (1 + pixel_glow * 0.5)
     return np.clip(result, 0, 255).astype('uint8')
+
+
+def apply_distortion(img, intensity=0.5, mode=0):
+    h, w = img.shape[:2]
+    x, y = np.meshgrid(np.arange(w), np.arange(h))
+
+    if mode == 0:  # LCD-имитация
+        x_distort = x + intensity * 50 * np.sin(y / 30)
+        y_distort = y + intensity * 30 * np.cos(x / 40)
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC,
+                         borderMode=cv2.BORDER_REPLICATE)
+
+    elif mode == 1:  # Искажение сетки пикселей
+        cell_size = max(4, int(20 - intensity * 15))
+        x_distort = x + intensity * 10 * np.sin((x // cell_size) * cell_size / 10) * \
+                    np.sin((y // cell_size) * cell_size / 10)
+        y_distort = y + intensity * 10 * np.cos((x // cell_size) * cell_size / 10) * \
+                    np.cos((y // cell_size) * cell_size / 10)
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_NEAREST,
+                         borderMode=cv2.BORDER_REPLICATE)
+
+    elif mode == 2:  # RGB distortion
+        shifted = np.zeros_like(img)
+        shift = int(intensity * 10)
+        for c in range(3):
+            x_shift = x + (c - 1) * shift * np.sin(y / 50)
+            shifted[..., c] = cv2.remap(img[..., c], x_shift.astype(np.float32), y.astype(np.float32), cv2.INTER_CUBIC,
+                                        borderMode=cv2.BORDER_REPLICATE)
+        return shifted
+
+    elif mode == 3:  # Mission Control
+        scanline_freq = max(2, int(10 - intensity * 8))
+        scan_distort = intensity * 15 * np.sin(y / scanline_freq)
+        x_distort = np.clip(x + scan_distort * np.sin(x / 30), 0, w - 1)
+        result = cv2.remap(img, x_distort.astype(np.float32), y.astype(np.float32), cv2.INTER_LINEAR,
+                           borderMode=cv2.BORDER_REPLICATE)
+        scanlines = np.sin((y % scanline_freq) / scanline_freq * np.pi) * 0.3 + 0.7
+        return (result * scanlines[..., None]).astype(np.uint8)
+
+    elif mode == 4:  # Шестигранная сетка
+        hex_size = max(3, int(15 - intensity * 12))
+        hex_grid_x = (x + (y % 2) * hex_size / 2) // hex_size * hex_size
+        hex_grid_y = (y // hex_size) * hex_size
+
+        distort_x = hex_grid_x + hex_size / 2 * np.sin(y / 20) * intensity
+        distort_y = hex_grid_y + hex_size / 2 * np.cos(x / 20) * intensity
+
+        distorted = cv2.remap(img,
+                              distort_x.astype(np.float32),
+                              distort_y.astype(np.float32),
+                              cv2.INTER_NEAREST)
+        return cv2.addWeighted(img, 1 - intensity, distorted, intensity, 0)
+
+    elif mode == 5:  # Выгоревшая киноплёнка
+        h, w = img.shape[:2]
+        result = img.copy()
+        intensity = max(intensity, 0.1)
+
+        line_intensity = int(intensity * 15)
+        noise = np.random.randint(-line_intensity, line_intensity, (h, w, 3))
+        noise_lines = np.random.rand(h) < intensity * 0.2
+        result[noise_lines] = np.clip(result[noise_lines] + noise[noise_lines], 0, 255)
+
+        if intensity > 0.4:
+            banding = np.sin(np.arange(w) / 50) * intensity * 40
+            result = np.clip(result + banding[None, :, None], 0, 255)
+
+        return result.astype(np.uint8)
+
+    elif mode == 6:  # Магнитная лента
+        h, w = img.shape[:2]
+        y, x = np.indices((h, w))
+
+        intensity_clip = max(intensity, 0.1)
+        dynamic_range = 1.0 + intensity_clip * 0.8
+        wave_freq = max(5.0, 30.0 - intensity_clip * 22)
+        x_distort = x + intensity_clip * 20 * np.sin(y / wave_freq) * dynamic_range
+
+        distorted = np.zeros_like(img)
+        for c in range(3):
+            channel_shift = int((c - 1) * intensity_clip * 3 * dynamic_range)
+            distorted[..., c] = cv2.remap(img[..., c],
+                                          np.clip(x_distort + channel_shift, 0, w - 1).astype(np.float32),
+                                          y.astype(np.float32),
+                                          cv2.INTER_LINEAR)
+
+        if intensity_clip > 0.5:
+            noise_height = min(h, int(h * (intensity_clip - 0.5) * 0.2))
+            if noise_height > 0:
+                noise_mask = np.linspace(0, 1, noise_height)[:, np.newaxis, np.newaxis]
+                noise = np.random.randint(0, 255, (noise_height, w, 3))
+                distorted[-noise_height:] = np.clip(distorted[-noise_height:] * (1 - 0.7 * noise_mask) +
+                                                    noise * (0.7 * noise_mask), 0, 255)
+
+        return distorted
+
+    elif mode == 7:  # VHS-шумы
+        result = img.copy()
+        intensity = min(3.0, intensity)
+        if intensity > 0.3:
+            block_size = max(2, int(5 - intensity * 3))
+            h_blocks, w_blocks = h // block_size, w // block_size
+            corrupt_mask = np.random.rand(h_blocks, w_blocks) < intensity * 0.3
+
+            for i in range(h_blocks):
+                for j in range(w_blocks):
+                    if corrupt_mask[i, j]:
+                        y, x = i * block_size, j * block_size
+                        result[y:y + block_size, x:x + block_size] = \
+                            np.random.randint(0, 255, (block_size, block_size, 3))
+
+        if intensity > 0.5:
+            tear_lines = np.random.rand(h) < intensity * 0.03
+            tear_shifts = np.random.randint(-int(10 * intensity), int(10 * intensity), size=h)
+            for y in np.where(tear_lines)[0]:
+                result[y, :] = np.roll(result[y, :], tear_shifts[y], axis=0)
+
+        return result
+
+
+def apply_data_mosh(img, block_size=16, corruption_chance=0.3):
+    h, w = img.shape[:2]
+    result = img.copy()
+    block_size = min(block_size, h // 4, w // 4)
+    if block_size < 2:
+        return img
+
+    for y in range(0, h - block_size, block_size):
+        for x in range(0, w - block_size, block_size):
+            if np.random.rand() < corruption_chance:
+                max_offset = min(3 * block_size, h - block_size - y, w - block_size - x)
+                src_y = y + np.random.randint(-max_offset, max_offset + 1)
+                src_x = x + np.random.randint(-max_offset, max_offset + 1)
+                src_y = max(0, min(src_y, h - block_size - 1))
+                src_x = max(0, min(src_x, w - block_size - 1))
+                if src_y >= 0 and src_x >= 0 and (src_y + block_size) <= h and (src_x + block_size) <= w:
+                    result[y:y + block_size, x:x + block_size] = img[src_y:src_y + block_size, src_x:src_x + block_size]
+    return result
+
+
+def apply_kaleidoscope(img, segments=3, mode=0, intensity=1.0, outside=0):
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+    y, x = np.ogrid[-center[1]:h - center[1], -center[0]:w - center[0]]
+    radius_classic = min(center[0], center[1])
+    circle_mask_classic = x ** 2 + y ** 2 <= radius_classic ** 2
+
+    if mode == 0:  # Пузырь
+        radius = int(np.hypot(center[0], center[1]))
+        circle_mask = x ** 2 + y ** 2 <= radius ** 2
+        polar_img = cv2.linearPolar(img, center, radius, cv2.WARP_FILL_OUTLIERS)
+        polar_w = polar_img.shape[1]
+
+        segment_width = max(1, polar_w // max(2, segments))
+        base_segment = polar_img[:, :segment_width]
+        result_polar = np.zeros_like(polar_img)
+        for i in range(segments):
+            segment = base_segment if i % 2 == 0 else cv2.flip(base_segment, 1)
+            start = i * segment_width
+            end = min((i + 1) * segment_width, polar_w)
+            result_polar[:, start:end] = segment[:, :end - start]
+
+        result = cv2.linearPolar(result_polar, center, radius, cv2.WARP_INVERSE_MAP)
+        circle_mask = x ** 2 + y ** 2 <= radius ** 2  # Full-image mask
+
+    elif mode == 1:  # Срезы
+        segments = max(2, min(32, segments))
+        angle_step = 2 * np.pi / segments
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        for i in range(segments):
+            if i % 2 == 0:
+                pts = np.array([
+                    center,
+                    [int(center[0] + w * np.cos(i * angle_step)),
+                     int(center[1] + h * np.sin(i * angle_step))],
+                    [int(center[0] + w * np.cos((i + 1) * angle_step)),
+                     int(center[1] + h * np.sin((i + 1) * angle_step))]
+                ], dtype=np.int32)
+                cv2.fillConvexPoly(mask, pts, 1)
+
+        result = cv2.flip(img, -1)
+        result = cv2.addWeighted(img, 1 - intensity, result, intensity, 0)
+        circle_mask = mask == 1
+
+    elif mode == 2:  # Радиальный взрыв
+        radius = int(np.hypot(center[0], center[1]))
+        segments = max(3, min(16, segments))
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+        for i in range(segments):
+            start_angle = 360 * i / segments
+            end_angle = 360 * (i + 1) / segments
+            if i % 2 == 0:
+                cv2.ellipse(mask, center, (radius, radius), 0, start_angle, end_angle, 1, -1)
+        polar_img = cv2.linearPolar(img, center, radius, cv2.WARP_FILL_OUTLIERS)
+        polar_w = polar_img.shape[1]
+        segment_width = max(1, polar_w // segments)
+        result_polar = np.zeros_like(polar_img)
+        for i in range(segments):
+            segment = polar_img[:, i * segment_width:(i + 1) * segment_width]
+            result_polar[:, i * segment_width:(i + 1) * segment_width] = (
+                segment if i % 2 == 0 else cv2.flip(segment, 1))
+
+        result = cv2.linearPolar(result_polar, center, radius, cv2.WARP_INVERSE_MAP)
+        circle_mask = mask == 1
+
+    final = img.copy()
+    if mode in [0, 2]:
+        final = result
+        if outside == 1:
+            final[~circle_mask] = 0
+        elif outside == 2:
+            mirrored = cv2.flip(result, 1)
+            edge_mask = cv2.dilate(circle_mask.astype(np.uint8), np.ones((5, 5), np.uint8)) - circle_mask
+            final[edge_mask == 1] = mirrored[edge_mask == 1]
+    else:
+        if outside == 0:
+            final[circle_mask] = result[circle_mask]
+        elif outside == 1:
+            final[circle_mask] = result[circle_mask]
+            final[~circle_mask] = 0
+        elif outside == 2:
+            final[circle_mask] = result[circle_mask]
+            mirrored = cv2.flip(result, 1)
+            edge_mask = cv2.dilate(circle_mask.astype(np.uint8), np.ones((5, 5), np.uint8)) - circle_mask
+            final[edge_mask == 1] = mirrored[edge_mask == 1]
+    return final
 # endregion
 
 
@@ -305,6 +533,25 @@ def apply_duotone_gradient(img,
         result[..., c] = color1_rgb[c] * (1 - gray_norm) + color2_rgb[c] * gray_norm
 
     return result.astype('uint8')
+
+
+def apply_neon_diffusion(img, intensity=0.7, glow_size=5, style=0, hue_shift=0):
+    blurred = cv2.GaussianBlur(img, (0, 0), sigmaX=glow_size)
+    lab = cv2.cvtColor(blurred, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    if style == 0:
+        a = cv2.addWeighted(a, 0.8, np.roll(a, 2, axis=1), 0.2, 0)
+        b = cv2.addWeighted(b, 0.8, np.roll(b, -2, axis=1), 0.2, 0)
+        glow = cv2.cvtColor(cv2.merge([l, a, b]), cv2.COLOR_LAB2RGB)
+    else:
+        a_shifted = cv2.addWeighted(a, 1, np.roll(a, 3, axis=1), -0.3, 0)
+        b_shifted = cv2.addWeighted(b, 1, np.roll(b, -3, axis=1), -0.3, 0)
+
+        glow_rgb = cv2.cvtColor(cv2.merge([l, a_shifted, b_shifted]), cv2.COLOR_LAB2RGB)
+        hsv = cv2.cvtColor(glow_rgb, cv2.COLOR_RGB2HSV)
+        hsv[..., 0] = (hsv[..., 0] + hue_shift) % 180
+        glow = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+    return cv2.addWeighted(img, 1 - intensity, glow, intensity, 0)
 # endregion
 
 
@@ -330,6 +577,13 @@ def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_dir=(1.0, 1.0,
     result = img * (0.5 + 0.5 * shading[..., None])
     return cv2.resize(np.clip(result, 0, 255).astype('uint8'),
                       (img.shape[1], img.shape[0]))
+
+
+def glitchy_pixelation(img, base_size=4, channel_shift=3):
+    r = pixelize_image(img[..., 0], base_size + channel_shift)
+    g = pixelize_image(img[..., 1], base_size)
+    b = pixelize_image(img[..., 2], base_size - channel_shift)
+    return cv2.merge((r, g, b))
 # endregion
 
 

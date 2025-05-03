@@ -634,9 +634,20 @@
             "color": 1
           },
           "visible": true
+        },
+        {
+          "name": "Sketch",
+          "params": {
+            "ksize": 21,
+            "sigma": 5,
+            "gamma": 10,
+            "color": 1,
+            "intensity": 5
+          },
+          "visible": true
         }
       ],
-      "created_at": 1746250679.69672
+      "created_at": 1746252946.580325
     }
   }
 }

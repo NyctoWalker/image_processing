@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
     QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QAction
 import cv2
 import numpy as np
@@ -20,7 +20,8 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
-    apply_duotone_gradient, apply_pencil_sketch, apply_noise_dither
+    apply_duotone_gradient, apply_pencil_sketch, apply_noise_dither, apply_neon_diffusion, apply_distortion, \
+    apply_data_mosh, apply_kaleidoscope
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -59,15 +60,19 @@ FILTER_DEFINITIONS = {
     },
     "Blur": {
         "has_params": True,
-        "default_params": {"size": 1, "variation": 0},
+        "default_params": {"size": 0, "variation": 0},
         "display_text": lambda p: f"Размытие (размер: {p['size']}, тип: {p['variation'] + 1})",
         "dialog_sliders": [
-            {"label": "Размер ядра:", "key": "size", "min": 1, "max": 31,
-             "value_label": lambda v: str(v), "odd_only": True},
+            {"label": "Размер ядра:", "key": "size", "min": 0, "max": 15, "step": 1,
+             "value_label": lambda v: str(1 + v*2)},
             {"label": "Размер ядра:", "key": "variation", "min": 0, "max": 2, "step": 1,
              "value_label": lambda v: ["Гаусс", "Медиана", "Двусторонний"][int(v)]}
         ],
-        "apply": lambda img, params: apply_blur(img, max(1, params.get('size', 5)), params.get("variation", 0))
+        "apply": lambda img, params: apply_blur(
+            img,
+            1 + params.get('size', 5) * 2,
+            params.get("variation", 0)
+        )
     },
     "Edge Detection": {
         "has_params": True,
@@ -278,11 +283,11 @@ FILTER_DEFINITIONS = {
     },
     "Sketch": {
         "has_params": True,
-        "default_params": {"ksize": 15, "sigma": 3, "gamma": 5, "color": 0, "intensity": 7},
+        "default_params": {"ksize": 7, "sigma": 3, "gamma": 5, "color": 0, "intensity": 7},
         "display_text": lambda p: f"Скетч ({p['ksize']}({p['sigma']}), {p['gamma']}, цвет {p['color']})",
         "dialog_sliders": [
-            {"label": "Размер ядра:", "key": "ksize", "min": 1, "max": 21,
-             "value_label": lambda v: str(v), "odd_only": True},
+            {"label": "Размер ядра:", "key": "ksize", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: str(1 + v*2)},
             {"label": "Чёткость линий:", "key": "sigma", "min": 1, "max": 10, "step": 1,
              "value_label": lambda v: str(v)},
             {"label": "Гамма-коррекция:", "key": "gamma", "min": 1, "max": 50, "step": 3,
@@ -294,7 +299,7 @@ FILTER_DEFINITIONS = {
         ],
         "apply": lambda img, params: apply_pencil_sketch(
             img,
-            params.get("ksize", 15),
+            1 + params.get("ksize", 7)*2,
             params.get("sigma", 3),
             params.get("gamma", 5)/10,
             params.get('color', 0),
@@ -309,7 +314,77 @@ FILTER_DEFINITIONS = {
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1, "value_label": lambda v: "Нет" if v == 0 else "Да"},
         ],
         "apply": lambda img, params: apply_noise_dither(img, params.get('color', 0))
-    }
+    },
+    "Neon": {
+        "has_params": True,
+        "default_params": {"v1": 7, "v2": 5, "v3": 0, "v4": 0},
+        "display_text": lambda p: f"Неон ({p['v1']/10}, {p['v2']}, {p['v3']}, {p['v4']})",
+        "dialog_sliders": [
+            {"label": "Интенсивность:", "key": "v1", "min": 1, "max": 30, "value_label": lambda v: str(v/10)},
+            {"label": "Свечение:", "key": "v2", "min": 1, "max": 30, "value_label": lambda v: str(v)},
+            {"label": "Цвет:", "key": "v3", "min": 0, "max": 1, "value_label": lambda v: "Нет" if v == 0 else "Да"},
+            {"label": "Оттенок(цвета):", "key": "v4", "min": 0, "max": 180, "step": 10, "value_label": lambda v: str(v)},
+        ],
+        "apply": lambda img, params: apply_neon_diffusion(
+            img,
+            params.get('v1', 7)/10,
+            params.get('v2', 5),
+            params.get('v3', 0),
+            params.get('v4', 0),
+        )
+    },
+    "Distortion": {
+        "has_params": True,
+        "default_params": {"intensity": 5, "mode": 0},
+        "display_text": lambda p: f"Искажение ({p['intensity'] / 10}, {p['mode']})",
+        "dialog_sliders": [
+            {"label": "Интенсивность:", "key": "intensity", "min": 0, "max": 50, "value_label": lambda v: str(v / 10)},
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 7, "step": 1,
+             "value_label": lambda v: ["LCD", "Пиксельная сетка", "Хроматическое искажение", "Mission Control",
+                                       "Гексагональная сетка", "Выгоревшая киноплёнка", "Магнитная лента",
+                                       "VHS-помехи"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_distortion(
+            img,
+            params.get('intensity', 5)/10,
+            params.get('mode', 0),
+        )
+    },
+    "Glitch": {
+        "has_params": True,
+        "default_params": {"block_size": 16, "chance": 3},
+        "display_text": lambda p: f"Имитация ошибки (размер {p['block_size']}, шанс {p['chance']*5}%)",
+        "dialog_sliders": [
+            {"label": "Размер блока:", "key": "block_size", "min": 2, "max": 64, "step": 4,
+             "value_label": lambda v: str(v)},
+            {"label": "Шанс:", "key": "chance", "min": 0, "max": 20, "value_label": lambda v: str(v / 20)},
+        ],
+        "apply": lambda img, params: apply_data_mosh(
+            img,
+            params.get('block_size', 16),
+            params.get('chance', 4) / 20,
+        )
+    },
+    "Kaleidoscope": {
+        "has_params": True,
+        "default_params": {"segments": 2, "mode": 0, "intensity": 5, "outside": 0},
+        "display_text": lambda p: f"Калейдоскоп ({p['segments']} сегм, реж {p['mode']}-{p['outside']}, {p['intensity']/10})",
+        "dialog_sliders": [
+            {"label": "Сегменты:", "key": "segments", "min": 2, "max": 32, "value_label": lambda v: str(v)},
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 2,
+             "value_label": lambda v: ["Пузырь", "Разрезы", "Радиальный взрыв"][int(v)]},
+            {"label": "Непрозрачность:", "key": "intensity", "min": 0, "max": 10, "value_label": lambda v: str(v/10)},
+            {"label": "Внешние границы:", "key": "outside", "min": 0, "max": 2,
+             "value_label": lambda v: ["Не модифицировать", "Чёрные", "Обводка"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_kaleidoscope(
+            img,
+            params.get('segments', 6),
+            params.get('mode', 0),
+            params.get('intensity', 5)/10,
+            params.get('outside', 0)
+        )
+    },
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -334,7 +409,12 @@ FILTER_DISPLAY_NAMES = {
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
-    "Noise": "Шум"
+    "Neon": "Свечение",
+    "Noise": "Шум",
+    "Distortion": "Искажение",
+    "Glitch": "Имитация ошибок",
+    "Kaleidoscope": "Калейдоскоп",
+    # "Test": "Тест"
 }
 
 
@@ -376,6 +456,13 @@ class FilterDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        QTimer.singleShot(100, self.emit_initial_preview)
+
+    def emit_initial_preview(self):
+        if self.preview_checkbox.isChecked():
+            self.current_params = self.get_current_params()
+            self.preview_requested.emit(self.filter_name, self.current_params.copy())
+
     def on_accept(self):
         self.user_accepted = True
         self.current_params = self.get_current_params()
@@ -414,11 +501,8 @@ class FilterDialog(QDialog):
             value_label = QLabel(slider_def["value_label"](value))
 
             slider.valueChanged.connect(lambda v, l=value_label, d=slider_def: l.setText(d["value_label"](v)))
-            slider.valueChanged.connect(self.on_slider_changed)
-
-            if slider_def.get("odd_only", False):
-                slider.valueChanged.connect(lambda v, s=slider, l=value_label, d=slider_def:
-                                            self.handle_odd_slider(v, s, l, d))
+            slider.valueChanged.connect(lambda: self.on_slider_changed(immediate=False))
+            slider.sliderReleased.connect(lambda s=slider, d=slider_def: self.on_slider_released(s, d))
 
             layout.addRow(slider_def["label"], slider)
             layout.addRow("Значение:", value_label)
@@ -428,17 +512,33 @@ class FilterDialog(QDialog):
             for key, slider in self.sliders.items():
                 slider.valueChanged.emit(slider.value())
 
-    def on_slider_changed(self):
+    def on_slider_changed(self, immediate=False):
         if not self.preview_enabled or not self.initialized:
             return
 
         if hasattr(self, '_update_timer'):
             self._update_timer.stop()
+        if immediate:
+            self._process_slider_change()
+            return
 
         self._update_timer = QTimer()
         self._update_timer.setSingleShot(True)
         self._update_timer.timeout.connect(self._process_slider_change)
-        self._update_timer.start(150)  # мс от последних изменений
+        self._update_timer.start(200)  # мс от последних изменений
+
+    def on_slider_released(self, slider, slider_def):
+        if not hasattr(slider, '_last_press_value'):
+            return
+        if slider.value() != slider._last_press_value:
+            self.on_slider_changed(immediate=True)
+        delattr(slider, '_last_press_value')
+
+    def slider_event(self, event):
+        if event.type() == QEvent.Type.SliderPress:
+            for slider in self.sliders.values():
+                slider._last_press_value = slider.value()
+        super().event(event)
 
     def _process_slider_change(self):
         self.current_params = self.get_current_params()
@@ -473,12 +573,6 @@ class FilterDialog(QDialog):
             except Exception as e:
                 print(f"Error in pixel art dialog: {e}")
                 QMessageBox.warning(self, "Error", "Failed to configure pixel art settings")
-
-    def handle_odd_slider(self, value, slider, label, slider_def):
-        if value % 2 == 0:
-            value = value + 1 if value < slider.maximum() else value - 1
-            slider.setValue(value)
-        label.setText(slider_def["value_label"](value))
 
     def change_kernel_size(self):
         new_size, ok = QInputDialog.getInt(
@@ -889,7 +983,7 @@ class FilterApp(QMainWindow):
                 delattr(self, 'loaded_preset_name')
 # endregion
 
-# region caching flags
+# region Caching Flags
     def mark_dirty_from(self, index):
         for i in range(index, len(self.dirty_flags)):
             self.dirty_flags[i] = True
@@ -907,7 +1001,7 @@ class FilterApp(QMainWindow):
             self.dirty_flags.pop()
 # endregion
 
-# region save/load
+# region Save/Load
     def load_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Открыть изображение", "",
@@ -942,7 +1036,7 @@ class FilterApp(QMainWindow):
             QMessageBox.warning(self, "Ошибка", "Не удалось сохранить изображение!")
 # endregion
 
-# region filters crud
+# region Filters CRUD
     def add_filter(self, item):
         filter_name = item.data(Qt.ItemDataRole.UserRole)
         filter_def = FILTER_DEFINITIONS[filter_name]
@@ -980,7 +1074,7 @@ class FilterApp(QMainWindow):
             self.update_filters_list()
             self.update_display()
         else:
-            # Отмена - восстановление предыдущего состояние
+            # Отмена - восстановление предыдущего состояния
             self.preview_mode = previous_preview_state['mode']
             self.preview_filter_index = previous_preview_state['index']
             self.preview_filter_name = previous_preview_state['name']
