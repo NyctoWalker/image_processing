@@ -28,7 +28,8 @@
         {
           "name": "Blur",
           "params": {
-            "size": 3
+            "size": 3,
+            "variation": 1
           },
           "visible": true
         },
@@ -565,6 +566,88 @@
         }
       ],
       "created_at": 1746215781.6923923
+    },
+    "Термометр": {
+      "filters": [
+        {
+          "name": "Blur",
+          "params": {
+            "size": 31,
+            "variation": 2
+          },
+          "visible": true
+        },
+        {
+          "name": "Stepped Gradient",
+          "params": {
+            "hue": 360,
+            "palette": 4,
+            "color_count": 16,
+            "darken": 4
+          },
+          "visible": true
+        },
+        {
+          "name": "CRT",
+          "params": {
+            "opacity": 9,
+            "scan_space": 10,
+            "scanline_thickness": 1,
+            "pixel_diff": 9
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 160,
+            "brightness": 100
+          },
+          "visible": true
+        },
+        {
+          "name": "Chromatic Abberation",
+          "params": {
+            "value": 2
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746249544.9135616
+    },
+    "Контурная пастеризация": {
+      "filters": [
+        {
+          "name": "Posterize",
+          "params": {
+            "levels": 6
+          },
+          "visible": true
+        },
+        {
+          "name": "Edge Detection",
+          "params": {
+            "threshold1": 0,
+            "threshold2": 300,
+            "kernel_size": 1,
+            "color": 1
+          },
+          "visible": true
+        },
+        {
+          "name": "Sketch",
+          "params": {
+            "ksize": 21,
+            "sigma": 5,
+            "gamma": 10,
+            "color": 1,
+            "intensity": 5
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746252946.580325
     }
   }
 }

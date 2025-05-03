@@ -20,13 +20,18 @@ def adjust_brightness_contrast(img, brightness, contrast):
 # endregion
 
 
-def apply_blur(img, size):
-    if size % 2 == 0:
-        size += 1
-    return cv2.GaussianBlur(img, (size, size), 0)
-
-
 # region Simple filters
+def apply_blur(img, size, variation=1):
+    size = size + 1 - size % 2
+    if variation == 0:
+        return cv2.GaussianBlur(img, (size, size), 0)
+    elif variation == 1:
+        return cv2.medianBlur(img, size)
+    else:
+        addition = 2 * size
+        return cv2.bilateralFilter(img, size, 130 - addition, 130 - addition)
+
+
 def apply_sepia(img):
     sepia_filter = np.array([
         [0.393, 0.769, 0.189],
@@ -44,19 +49,6 @@ def apply_grayscale(img):
 def apply_posterize(img, levels=4):
     factor = 256 // levels
     return np.clip((img // factor) * factor, 0, 255).astype('uint8')
-
-
-def apply_threshold(img, thresh=128, preserve_color=0):
-    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-    mask = (gray > thresh)
-
-    if preserve_color == 1:
-        result = np.zeros_like(img)
-        result[mask] = img[mask]
-        return result
-    else:
-        bw = mask * 255
-        return np.stack((bw,) * 3, axis=-1).astype('uint8')
 
 
 def apply_bleach_bypass(img):
@@ -86,6 +78,19 @@ def apply_canny_thresh(img, threshold1=100, threshold2=250, kernel_size=1, prese
         return result
     else:
         return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+
+def apply_threshold(img, thresh=128, preserve_color=0):
+    gray = np.dot(img[..., :3], [0.299, 0.587, 0.114])
+    mask = (gray > thresh)
+
+    if preserve_color == 1:
+        result = np.zeros_like(img)
+        result[mask] = img[mask]
+        return result
+    else:
+        bw = mask * 255
+        return np.stack((bw,) * 3, axis=-1).astype('uint8')
 
 
 def apply_halftone(img, dot_size=4, max_dot_ratio=0.8, preserve_color=0):
@@ -136,6 +141,37 @@ def apply_ordered_dither(img, bayer_size=4, preserve_color=0):
 
     if preserve_color == 1:
         result = np.zeros((h, w, 3), dtype=np.uint8)
+        result[mask == 1] = img[mask == 1]
+        return result
+    else:
+        return cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2RGB)
+
+
+def apply_pencil_sketch(img, ksize=21, sigma=3, gamma=0.5, preserve_color=0, color_intensity=0.7):
+    ksize = ksize + 1 - ksize % 2
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype('float32')
+    blur = cv2.GaussianBlur(gray, (ksize, ksize), sigma).astype('float32')
+
+    sketch = 255 - cv2.divide(gray, blur + 1e-6, scale=256)
+    sketch = np.clip(sketch * gamma, 0, 255).astype('uint8')
+
+    if preserve_color == 1:
+        sketch_3ch = cv2.cvtColor(sketch, cv2.COLOR_GRAY2RGB).astype('float32') / 255.0
+        blended = img.astype('float32') * (1 - sketch_3ch * color_intensity)
+        result = cv2.addWeighted(blended, 0.9, img.astype('float32'), 0.1, 0)
+        return np.clip(result, 0, 255).astype('uint8')
+    else:
+        return cv2.cvtColor(255 - sketch, cv2.COLOR_GRAY2RGB)
+
+
+def apply_noise_dither(img, preserve_color=0):
+    h, w = img.shape[:2]
+    blue_noise = np.random.rand(h, w) * 255
+
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    mask = (gray > blue_noise).astype(np.uint8)
+    if preserve_color == 1:
+        result = np.zeros_like(img)
         result[mask == 1] = img[mask == 1]
         return result
     else:

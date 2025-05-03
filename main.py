@@ -20,7 +20,7 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
-    apply_duotone_gradient
+    apply_duotone_gradient, apply_pencil_sketch, apply_noise_dither
 
 FILTER_DEFINITIONS = {
     "HSB Adjustment": {
@@ -59,14 +59,15 @@ FILTER_DEFINITIONS = {
     },
     "Blur": {
         "has_params": True,
-        "default_params": {"size": 1},
-        "display_text": lambda p: f"Размытие (size: {p['size']})",
+        "default_params": {"size": 1, "variation": 0},
+        "display_text": lambda p: f"Размытие (размер: {p['size']}, тип: {p['variation'] + 1})",
         "dialog_sliders": [
             {"label": "Размер ядра:", "key": "size", "min": 1, "max": 31,
-             "value_label": lambda v: str(v), "odd_only": True}
+             "value_label": lambda v: str(v), "odd_only": True},
+            {"label": "Размер ядра:", "key": "variation", "min": 0, "max": 2, "step": 1,
+             "value_label": lambda v: ["Гаусс", "Медиана", "Двусторонний"][int(v)]}
         ],
-        "apply": lambda img, params: apply_blur(img, max(1, params.get('size', 5))
-        )
+        "apply": lambda img, params: apply_blur(img, max(1, params.get('size', 5)), params.get("variation", 0))
     },
     "Edge Detection": {
         "has_params": True,
@@ -184,8 +185,8 @@ FILTER_DEFINITIONS = {
     },
     "Duotone Gradient": {
         "has_params": True,
-        "default_params": {"hue1": 120, "hue2": 90, "blend": 0},
-        "display_text": lambda p: f"Двухтоновый градиент ({p['hue1']}-{p['hue2']}, режим {p['blend']})",
+        "default_params": {"hue1": 120, "hue2": 20, "blend": 0},
+        "display_text": lambda p: f"Двутональный градиент ({p['hue1']}-{p['hue2']}, режим {p['blend']})",
         "dialog_sliders": [
             {"label": "Тёмный оттенок:", "key": "hue1", "min": 0, "max": 180, "step": 10,
              "value_label": lambda v: str(v)},
@@ -275,30 +276,65 @@ FILTER_DEFINITIONS = {
             params.get("height_scale", 3)/10
         )
     },
+    "Sketch": {
+        "has_params": True,
+        "default_params": {"ksize": 15, "sigma": 3, "gamma": 5, "color": 0, "intensity": 7},
+        "display_text": lambda p: f"Скетч ({p['ksize']}({p['sigma']}), {p['gamma']}, цвет {p['color']})",
+        "dialog_sliders": [
+            {"label": "Размер ядра:", "key": "ksize", "min": 1, "max": 21,
+             "value_label": lambda v: str(v), "odd_only": True},
+            {"label": "Чёткость линий:", "key": "sigma", "min": 1, "max": 10, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Гамма-коррекция:", "key": "gamma", "min": 1, "max": 50, "step": 3,
+             "value_label": lambda v: str(v/10)},
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
+             "value_label": lambda v: "Нет" if v == 0 else "Да"},
+            {"label": "Интенсивность(цвет):", "key": "intensity", "min": 1, "max": 50, "step": 4,
+             "value_label": lambda v: str(v/10)},
+        ],
+        "apply": lambda img, params: apply_pencil_sketch(
+            img,
+            params.get("ksize", 15),
+            params.get("sigma", 3),
+            params.get("gamma", 5)/10,
+            params.get('color', 0),
+            params.get("intensity", 7)/10,
+        )
+    },
+    "Noise": {
+        "has_params": True,
+        "default_params": {"color": 0},
+        "display_text": lambda p: f"Шум (цвет: {p['color']})",
+        "dialog_sliders": [
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1, "value_label": lambda v: "Нет" if v == 0 else "Да"},
+        ],
+        "apply": lambda img, params: apply_noise_dither(img, params.get('color', 0))
+    }
 }
 
 FILTER_DISPLAY_NAMES = {
     "HSB Adjustment": "Цветокоррекция HSB",
     "Brightness/Contrast": "Яркость/Контрастность",
-    "Blur": "Размытие (Гаусс)",
+    "Blur": "Размытие (Блюр)",
     "Edge Detection": "Детекция краёв",
-    "Invert": "Инверсия",
-    "Sepia": "Сепия",
-    "Grayscale": "Ч/Б (градации серого)",
-    "Bleach": "Выцветание (Ч/Б с контрастом)",
+    "Sketch": "Скетч/Карандаш",
     "Custom Kernel": "Кастомное ядро",
     "Pixel Art": "Пиксель-арт",
     "Resize": "Изменение размера",
     "Posterize": "Пастеризация",
     "Stepped Gradient": "Ступенчатый градиент",
-    "Duotone Gradient": "Двухтоновый градиент",
+    "Duotone Gradient": "Двутональный градиент",
+    "Invert": "Инверсия",
+    "Sepia": "Сепия",
+    "Grayscale": "Ч/Б (градации серого)",
+    "Bleach": "Выцветание (Ч/Б с контрастом)",
     "Threshold": "Двоичный порог",
     "Bayer Dithering": "Дизеринг Байеса",
     "Dotted": "Точки",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
-    "Test": "Тест",
+    "Noise": "Шум"
 }
 
 
