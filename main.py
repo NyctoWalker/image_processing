@@ -21,7 +21,7 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
     apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
-    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither
+    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -30,7 +30,7 @@ FILTER_DEFINITIONS = {
         "default_params": {"hue": 0, "saturation": 100, "brightness": 100},
         "display_text": lambda p: f"HSB (H:{p['hue']}°, S:{p['saturation']}%, B:{p['brightness']}%)",
         "dialog_sliders": [
-            {"label": "Оттенок:", "key": "hue", "min": -180, "max": 180, "step": 10, "value_label": lambda v: f"{v}°"},
+            {"label": "Оттенок:", "key": "hue", "min": 0, "max": 180, "step": 10, "value_label": lambda v: f"{v}°"},
             {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 300, "step": 20,
              "value_label": lambda v: f"{v}%"},
             {"label": "Яркость:", "key": "brightness", "min": 0, "max": 200, "step": 10,
@@ -41,6 +41,35 @@ FILTER_DEFINITIONS = {
             params.get('hue', 0),
             params.get('saturation', 100),
             params.get('brightness', 100)
+        )
+    },
+    "HSB Set": {
+        "has_params": True,
+        "default_params": {"hue": 0, "hue_on": 0, "saturation": 150, "sat_on": 1, "brightness": 200, "bright_on": 0},
+        "display_text": lambda p: "HSB Set: " + ", ".join(filter(None, [
+            f"H:{p['hue']}°" if p['hue_on'] else None,
+            f"S:{p['saturation']}" if p['sat_on'] else None,
+            f"B:{p['brightness']}" if p['bright_on'] else None
+        ])) or "HSB Force: (none)",
+        "dialog_sliders": [
+            {"label": "Оттенок:", "key": "hue", "min": 0, "max": 180, "step": 10, "value_label": lambda v: f"{v}°"},
+            {"label": "Модифицировать оттенок", "key": "hue_on", "min": 0, "max": 1,
+             "value_label": lambda v: "Да" if v else "Нет"},
+            {"label": "Насыщенность:", "key": "saturation", "min": 0, "max": 255, "step": 16, "value_label": lambda v: f"{int(v)}"},
+            {"label": "Модифицировать насыщенность", "key": "sat_on", "min": 0, "max": 1,
+             "value_label": lambda v: "Да" if v else "Нет"},
+            {"label": "Яркость:", "key": "brightness", "min": 0, "max": 255, "step": 16, "value_label": lambda v: f"{int(v)}"},
+            {"label": "Модифицировать яркость", "key": "bright_on", "min": 0, "max": 1,
+             "value_label": lambda v: "Да" if v else "Нет"}
+        ],
+        "apply": lambda img, params: apply_hsb_force_adjustment(
+            img,
+            params.get('hue', 0),
+            params.get('hue_on', 0),
+            params.get('saturation', 150),
+            params.get('sat_on', 1),
+            params.get('brightness', 200),
+            params.get('bright_on', 0)
         )
     },
     "Brightness/Contrast": {
@@ -303,7 +332,7 @@ FILTER_DEFINITIONS = {
     "Ink": {
         "has_params": True,
         "default_params": {"size": 2, "color": 0, "thresh": 128},
-        "display_text": lambda p: f"Чернила ()",
+        "display_text": lambda p: f"Чернила (размер {p['size']}, цвет {p['color']})",
         "dialog_sliders": [
             {"label": "Радиус:", "key": "size", "min": 1, "max": 8, "value_label": lambda v: str(v)},
             {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
@@ -315,6 +344,21 @@ FILTER_DEFINITIONS = {
             params.get('size', 2),
             params.get('color', 0),
             params.get('thresh', 128),
+        )
+    },
+    "Cellular Dither": {
+        "has_params": True,
+        "default_params": {"cell_density": 1, "color": 0},
+        "display_text": lambda p: f"Грязь (размер {p['cell_density']/100}, цвет {p['color']})",
+        "dialog_sliders": [
+            {"label": "Плотность:", "key": "cell_density", "min": 1, "max": 100, "value_label": lambda v: str(v/100)},
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
+             "value_label": lambda v: "Нет" if v == 0 else "Да"}
+        ],
+        "apply": lambda img, params: cellular_dither(
+            img,
+            params.get('cell_density', 1) / 100,
+            params.get('color', 0)
         )
     },
     # endregion
@@ -436,6 +480,7 @@ FILTER_DEFINITIONS = {
 
 FILTER_DISPLAY_NAMES = {
     "HSB Adjustment": "Цветокоррекция HSB",
+    "HSB Set": "Установка значений HSB",
     "Brightness/Contrast": "Яркость/Контрастность",
     "Blur": "Размытие (Блюр)",
     "Edge Detection": "Детекция краёв",
@@ -455,10 +500,11 @@ FILTER_DISPLAY_NAMES = {
     "Dotted": "Дизеринг Точки (равные)",
     "Stochastic Dithering": "Стохастический дизеринг",
     "Ink": "Чернила (диффузия)",
+    "Cellular Dither": "Грязь (диффузия)",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
-    "Neon": "Свечение",
+    "Neon": "Свечение/Неон",
     "Distortion": "Искажение",
     "Glitch": "Имитация ошибок",
     "Kaleidoscope": "Калейдоскоп",

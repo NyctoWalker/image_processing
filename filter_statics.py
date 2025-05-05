@@ -6,8 +6,20 @@ from numba import jit
 # region HSB/Pixel modify
 def apply_hsb_adjustment(img, hue, saturation, brightness):
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')
-    hsv[..., 0] = (hsv[..., 0] + (hue / 2)) % 180
+    hsv[..., 0] = (hsv[..., 0] + hue) % 180
     hsv[..., 1:] = np.clip(hsv[..., 1:] * np.array([saturation/100, brightness/100]), 0, 255)
+    return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)
+
+
+def apply_hsb_force_adjustment(img, hue, hue_on, saturation, sat_on, brightness, bright_on):
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV).astype('float32')
+
+    if hue_on:
+        hsv[..., 0] = (hue + 180) % 180
+    if sat_on:
+        hsv[..., 1] = np.clip(saturation, 0, 255)
+    if bright_on:
+        hsv[..., 2] = np.clip(brightness, 0, 255)
     return cv2.cvtColor(hsv.astype('uint8'), cv2.COLOR_HSV2RGB)
 
 
@@ -206,7 +218,7 @@ def apply_stochastic_diffusion(img, grain_size=0.15, intensity=0.1, preserve_col
         return cv2.cvtColor(dithered, cv2.COLOR_GRAY2RGB)
 
 
-@jit(nopython=True, fastmath=True, cache=True)
+@jit(nopython=True, fastmath=True)
 def apply_ink_bleed(working, output, kernel, bleed_radius, h, w, threshold):
     kernel_size = kernel.shape[0]
     for y in range(h):
@@ -245,6 +257,30 @@ def ink_bleed_dither(img, bleed_radius=2, preserve_color=0, threshold=128):
         return np.where(mask, 0, img).astype(np.uint8)
     else:
         return cv2.cvtColor(result, cv2.COLOR_GRAY2RGB)
+
+
+def cellular_dither(img, cell_density=0.005, preserve_color=0):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if preserve_color == 0 else np.mean(img, axis=2)
+    h, w = gray.shape
+
+    small_h, small_w = int(h * cell_density ** 0.5), int(w * cell_density ** 0.5)
+    points = np.column_stack((
+        np.random.randint(0, h, small_h * small_w),
+        np.random.randint(0, w, small_h * small_w)
+    ))
+
+    blank = np.zeros((h, w), dtype=np.uint8)
+    for y, x in points:
+        blank[y, x] = 255
+    _, dist = cv2.distanceTransformWithLabels(255 - blank, cv2.DIST_L2, 5)
+
+    dist_normalized = cv2.normalize(dist, None, 0, 255, cv2.NORM_MINMAX)
+    dithered = (gray > dist_normalized).astype(np.uint8) * 255
+
+    if preserve_color:
+        return np.where(dithered[..., None], img, 0)
+    else:
+        return cv2.cvtColor(dithered, cv2.COLOR_GRAY2RGB)
 # endregion
 
 
@@ -288,7 +324,7 @@ def apply_crt_effect(img, scanline_intensity=0.3, scanline_spacing=2,
     return np.clip(result, 0, 255).astype('uint8')
 
 
-@jit(nopython=True, fastmath=True, cache=True)
+@jit(nopython=True, fastmath=True, parallel=True)
 def apply_block_corruption(result, intensity, h, w, block_size, h_blocks, w_blocks):
     corrupt_mask = np.random.rand(h_blocks, w_blocks) < intensity * 0.3
     for i in range(h_blocks):
@@ -302,7 +338,7 @@ def apply_block_corruption(result, intensity, h, w, block_size, h_blocks, w_bloc
     return result
 
 
-@jit(nopython=True, fastmath=True, cache=True)
+@jit(nopython=True, fastmath=True, parallel=True)
 def apply_tear_lines(result, intensity, h, w):
     tear_lines = np.random.rand(h) < intensity * 0.03
     tear_shifts = np.random.randint(-int(10 * intensity), int(10 * intensity)+1, size=h)
@@ -679,8 +715,7 @@ def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_dir=(1.0, 1.0,
     shading = np.dot(normal_norm.reshape(-1, 3), light_dir).reshape(h, w)
 
     result = img * (0.5 + 0.5 * shading[..., None])
-    return cv2.resize(np.clip(result, 0, 255).astype('uint8'),
-                      (img.shape[1], img.shape[0]))
+    return cv2.resize(np.clip(result, 0, 255).astype('uint8'), (img.shape[1], img.shape[0]))
 
 
 def glitchy_pixelation(img, base_size=4, channel_shift=3):
