@@ -392,16 +392,22 @@ FILTER_DEFINITIONS = {
     },
     "Voxelize Pixels": {
         "has_params": True,
-        "default_params": {"block_size": 8, "height_scale": 2},
+        "default_params": {"block_size": 8, "height_scale": 2, "angle": 45, "ambient": 3},
         "display_text": lambda p: f"Вокселизация пикселей ({p['block_size']}, {p['height_scale']})",
         "dialog_sliders": [
             {"label": "Размер блока:", "key": "block_size", "min": 0, "max": 24, "value_label": lambda v: str(v)},
-            {"label": "Сила тени:", "key": "height_scale", "min": 0, "max": 20, "value_label": lambda v: str(v)}
+            {"label": "Сила тени:", "key": "height_scale", "min": 0, "max": 20, "value_label": lambda v: str(v)},
+            {"label": "Угол света:", "key": "angle", "min": 0, "max": 360, "step": 15,
+             "value_label": lambda v: f"{v}°"},
+            {"label": "Сила света:", "key": "ambient", "min": -10, "max": 40, "step": 5,
+             "value_label": lambda v: str(v/10)},
         ],
         "apply": lambda img, params: apply_voxel_effect(
             img,
             params.get("block_size", 3),
-            params.get("height_scale", 3)/10
+            params.get("height_scale", 3)/10,
+            params.get("angle", 45),
+            params.get("ambient", 3)/10,
         )
     },
     "Neon": {

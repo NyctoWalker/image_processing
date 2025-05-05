@@ -696,7 +696,7 @@ def apply_neon_diffusion(img, intensity=0.7, glow_size=5, style=0, hue_shift=0):
 
 
 # region Near-pixelizing
-def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_dir=(1.0, 1.0, 1.0)):
+def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_angle=45, ambient=0.3):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     h, w = gray.shape
 
@@ -707,15 +707,19 @@ def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_dir=(1.0, 1.0,
     sobel_x = cv2.Sobel(heightmap, cv2.CV_64F, 1, 0, ksize=3)
     sobel_y = cv2.Sobel(heightmap, cv2.CV_64F, 0, 1, ksize=3)
 
-    light_dir = np.array(light_dir)
+    light_angle_rad = np.radians(light_angle)
+    light_dir = np.array([np.cos(light_angle_rad), np.sin(light_angle_rad), 0.5])
     light_dir = light_dir / np.linalg.norm(light_dir)
 
     normal = np.dstack((-sobel_x, -sobel_y, np.ones_like(heightmap)))
     normal_norm = normal / np.linalg.norm(normal, axis=2, keepdims=True)
-    shading = np.dot(normal_norm.reshape(-1, 3), light_dir).reshape(h, w)
 
-    result = img * (0.5 + 0.5 * shading[..., None])
-    return cv2.resize(np.clip(result, 0, 255).astype('uint8'), (img.shape[1], img.shape[0]))
+    diffuse = np.dot(normal_norm.reshape(-1, 3), light_dir).reshape(h, w)
+    diffuse = np.clip(diffuse, 0, 1)
+    shading = ambient + (1 - ambient) * diffuse
+
+    result = img * shading[..., None]
+    return np.clip(result, 0, 255).astype('uint8')
 
 
 def glitchy_pixelation(img, base_size=4, channel_shift=3):
