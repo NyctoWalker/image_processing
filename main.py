@@ -20,10 +20,11 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
-    apply_duotone_gradient, apply_pencil_sketch, apply_noise_dither, apply_neon_diffusion, apply_distortion, \
-    apply_data_mosh, apply_kaleidoscope
+    apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
+    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither
 
 FILTER_DEFINITIONS = {
+    # region HSB/Color
     "HSB Adjustment": {
         "has_params": True,
         "default_params": {"hue": 0, "saturation": 100, "brightness": 100},
@@ -58,6 +59,8 @@ FILTER_DEFINITIONS = {
             params.get('contrast', 100)
         )
     },
+    # endregion
+    # region Edges
     "Blur": {
         "has_params": True,
         "default_params": {"size": 0, "variation": 0},
@@ -96,6 +99,33 @@ FILTER_DEFINITIONS = {
             params.get('color', 0)
         )
     },
+    "Sketch": {
+        "has_params": True,
+        "default_params": {"ksize": 7, "sigma": 3, "gamma": 5, "color": 0, "intensity": 7},
+        "display_text": lambda p: f"Скетч ({p['ksize']}({p['sigma']}), {p['gamma']}, цвет {p['color']})",
+        "dialog_sliders": [
+            {"label": "Размер ядра:", "key": "ksize", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: str(1 + v * 2)},
+            {"label": "Чёткость линий:", "key": "sigma", "min": 1, "max": 10, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Гамма-коррекция:", "key": "gamma", "min": 1, "max": 50, "step": 3,
+             "value_label": lambda v: str(v / 10)},
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
+             "value_label": lambda v: "Нет" if v == 0 else "Да"},
+            {"label": "Интенсивность(цвет):", "key": "intensity", "min": 1, "max": 50, "step": 4,
+             "value_label": lambda v: str(v / 10)},
+        ],
+        "apply": lambda img, params: apply_pencil_sketch(
+            img,
+            1 + params.get("ksize", 7) * 2,
+            params.get("sigma", 3),
+            params.get("gamma", 5) / 10,
+            params.get('color', 0),
+            params.get("intensity", 7) / 10,
+        )
+    },
+    # endregion
+    # region Simple
     "Invert": {
         "has_params": False,
         "display_text": lambda p: "Инверсия",
@@ -116,6 +146,8 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: "Выцветание (Ч/Б с контрастом)",
         "apply": lambda img, params: apply_bleach_bypass(img)
     },
+    # endregion
+    # region Special
     "Custom Kernel": {
         "has_params": True,
         "default_params": {
@@ -157,6 +189,8 @@ FILTER_DEFINITIONS = {
             params.get('interpolation', 1)
         )
     },
+    # endregion
+    # region Palettes
     "Posterize": {
         "has_params": True,
         "default_params": {"levels": 4},
@@ -207,6 +241,8 @@ FILTER_DEFINITIONS = {
             blend_mode=params.get("blend", 0)
         )
     },
+    # endregion
+    # region Shadows/Dither
     "Threshold": {
         "has_params": True,
         "default_params": {"thresh": 128, "color": 0},
@@ -240,6 +276,49 @@ FILTER_DEFINITIONS = {
         ],
         "apply": lambda img, params: apply_halftone(img, params.get("size", 10), preserve_color=params.get("color", 0))
     },
+    "Stochastic Dithering": {
+        "has_params": True,
+        "default_params": {"size": 15, "mode": 0, "v3": 5, "color": 0, "v5": 10},
+        "display_text": lambda p: f"Стохастический дизеринг (режим {p['mode']})",
+        "dialog_sliders": [
+            {"label": "Размер:", "key": "size", "min": 1, "max": 50,
+             "value_label": lambda v: "%.2f" % (0.5 - v / 100)},
+            {"label": "Метод:", "key": "mode", "min": 0, "max": 6, "step": 1,
+             "value_label": lambda v: ["Шахматы", "Концентрические круги", "Штрихи", "Спираль", "~Ячейки Вороного",
+                                       "Повёрнутые шахматы", "Шум"][int(v)]},
+            {"label": "Интенсивность наложения:", "key": "v3", "min": 0, "max": 20,
+             "value_label": lambda v: "%.1f" % (v / 10 - 1)},
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1, "value_label": lambda v: str(v)},
+            {"label": "Порог:", "key": "v5", "min": 1, "max": 30, "value_label": lambda v: str(v / 10)},
+        ],
+        "apply": lambda img, params: apply_stochastic_diffusion(
+            img,
+            grain_size=params.get("size", 15) / 100,
+            method=params.get("mode", 0),
+            intensity=params.get("v3", 1) / 10,
+            preserve_color=params.get("color", 0),
+            threshold_adj=params.get("v5", 10) / 10
+        )
+    },
+    "Ink": {
+        "has_params": True,
+        "default_params": {"size": 2, "color": 0, "thresh": 128},
+        "display_text": lambda p: f"Чернила ()",
+        "dialog_sliders": [
+            {"label": "Радиус:", "key": "size", "min": 1, "max": 8, "value_label": lambda v: str(v)},
+            {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
+             "value_label": lambda v: "Нет" if v == 0 else "Да"},
+            {"label": "Порог (цвет):", "key": "thresh", "min": 1, "max": 255, "value_label": lambda v: str(v)}
+        ],
+        "apply": lambda img, params: ink_bleed_dither(
+            img,
+            params.get('size', 2),
+            params.get('color', 0),
+            params.get('thresh', 128),
+        )
+    },
+    # endregion
+    # region Other
     "Chromatic Abberation": {
         "has_params": True,
         "default_params": {"value": 3},
@@ -281,40 +360,6 @@ FILTER_DEFINITIONS = {
             params.get("height_scale", 3)/10
         )
     },
-    "Sketch": {
-        "has_params": True,
-        "default_params": {"ksize": 7, "sigma": 3, "gamma": 5, "color": 0, "intensity": 7},
-        "display_text": lambda p: f"Скетч ({p['ksize']}({p['sigma']}), {p['gamma']}, цвет {p['color']})",
-        "dialog_sliders": [
-            {"label": "Размер ядра:", "key": "ksize", "min": 0, "max": 10, "step": 1,
-             "value_label": lambda v: str(1 + v*2)},
-            {"label": "Чёткость линий:", "key": "sigma", "min": 1, "max": 10, "step": 1,
-             "value_label": lambda v: str(v)},
-            {"label": "Гамма-коррекция:", "key": "gamma", "min": 1, "max": 50, "step": 3,
-             "value_label": lambda v: str(v/10)},
-            {"label": "Цвет:", "key": "color", "min": 0, "max": 1,
-             "value_label": lambda v: "Нет" if v == 0 else "Да"},
-            {"label": "Интенсивность(цвет):", "key": "intensity", "min": 1, "max": 50, "step": 4,
-             "value_label": lambda v: str(v/10)},
-        ],
-        "apply": lambda img, params: apply_pencil_sketch(
-            img,
-            1 + params.get("ksize", 7)*2,
-            params.get("sigma", 3),
-            params.get("gamma", 5)/10,
-            params.get('color', 0),
-            params.get("intensity", 7)/10,
-        )
-    },
-    "Noise": {
-        "has_params": True,
-        "default_params": {"color": 0},
-        "display_text": lambda p: f"Шум (цвет: {p['color']})",
-        "dialog_sliders": [
-            {"label": "Цвет:", "key": "color", "min": 0, "max": 1, "value_label": lambda v: "Нет" if v == 0 else "Да"},
-        ],
-        "apply": lambda img, params: apply_noise_dither(img, params.get('color', 0))
-    },
     "Neon": {
         "has_params": True,
         "default_params": {"v1": 7, "v2": 5, "v3": 0, "v4": 0},
@@ -339,10 +384,11 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"Искажение ({p['intensity'] / 10}, {p['mode']})",
         "dialog_sliders": [
             {"label": "Интенсивность:", "key": "intensity", "min": 0, "max": 50, "value_label": lambda v: str(v / 10)},
-            {"label": "Режим:", "key": "mode", "min": 0, "max": 7, "step": 1,
-             "value_label": lambda v: ["LCD", "Пиксельная сетка", "Хроматическое искажение", "Mission Control",
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: ["LCD-монитор", "Пиксельная сетка", "Хроматическое искажение", "Mission Control",
                                        "Гексагональная сетка", "Выгоревшая киноплёнка", "Магнитная лента",
-                                       "VHS-помехи"][int(v)]},
+                                       "VHS-помехи", "LCD-сетка", "Хиральное спиральное искажение",
+                                       "Тесселяционный фрактал"][int(v)]},
         ],
         "apply": lambda img, params: apply_distortion(
             img,
@@ -371,10 +417,10 @@ FILTER_DEFINITIONS = {
         "display_text": lambda p: f"Калейдоскоп ({p['segments']} сегм, реж {p['mode']}-{p['outside']}, {p['intensity']/10})",
         "dialog_sliders": [
             {"label": "Сегменты:", "key": "segments", "min": 2, "max": 32, "value_label": lambda v: str(v)},
-            {"label": "Режим:", "key": "mode", "min": 0, "max": 2,
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 2, "step": 1,
              "value_label": lambda v: ["Пузырь", "Разрезы", "Радиальный взрыв"][int(v)]},
             {"label": "Непрозрачность:", "key": "intensity", "min": 0, "max": 10, "value_label": lambda v: str(v/10)},
-            {"label": "Внешние границы:", "key": "outside", "min": 0, "max": 2,
+            {"label": "Внешние границы:", "key": "outside", "min": 0, "max": 2, "step": 1,
              "value_label": lambda v: ["Не модифицировать", "Чёрные", "Обводка"][int(v)]},
         ],
         "apply": lambda img, params: apply_kaleidoscope(
@@ -385,6 +431,7 @@ FILTER_DEFINITIONS = {
             params.get('outside', 0)
         )
     },
+    # endregion
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -405,16 +452,16 @@ FILTER_DISPLAY_NAMES = {
     "Bleach": "Выцветание (Ч/Б с контрастом)",
     "Threshold": "Двоичный порог",
     "Bayer Dithering": "Дизеринг Байеса",
-    "Dotted": "Точки",
+    "Dotted": "Дизеринг Точки (равные)",
+    "Stochastic Dithering": "Стохастический дизеринг",
+    "Ink": "Чернила (диффузия)",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
     "Neon": "Свечение",
-    "Noise": "Шум",
     "Distortion": "Искажение",
     "Glitch": "Имитация ошибок",
     "Kaleidoscope": "Калейдоскоп",
-    # "Test": "Тест"
 }
 
 

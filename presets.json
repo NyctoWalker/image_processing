@@ -93,77 +93,6 @@
       ],
       "created_at": 1745696010.495301
     },
-    "Preserve edge detection": {
-      "filters": [
-        {
-          "name": "Custom Kernel",
-          "params": {
-            "kernel_size": 3,
-            "kernel": [
-              [
-                -1.0,
-                0.0,
-                1.0
-              ],
-              [
-                -1.0,
-                0.0,
-                1.0
-              ],
-              [
-                -1.0,
-                0.0,
-                1.0
-              ]
-            ]
-          },
-          "visible": true
-        },
-        {
-          "name": "Custom Kernel",
-          "params": {
-            "kernel_size": 3,
-            "kernel": [
-              [
-                -1.0,
-                -1.0,
-                -1.0
-              ],
-              [
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                1.0,
-                1.0,
-                1.0
-              ]
-            ]
-          },
-          "visible": true
-        },
-        {
-          "name": "HSB Adjustment",
-          "params": {
-            "hue": 0,
-            "saturation": 0,
-            "brightness": 101
-          },
-          "visible": true
-        },
-        {
-          "name": "Pixel Art",
-          "params": {
-            "pixel_size": 1,
-            "method": "quantize",
-            "num_colors": 4
-          },
-          "visible": true
-        }
-      ],
-      "created_at": 1745733429.2339656
-    },
     "Good Pixel": {
       "filters": [
         {
@@ -677,9 +606,62 @@
             "color": 1
           },
           "visible": true
+        },
+        {
+          "name": "Stochastic Dithering",
+          "params": {
+            "size": 50,
+            "mode": 2,
+            "v3": 10,
+            "color": 1,
+            "v5": 2
+          },
+          "visible": true
         }
       ],
-      "created_at": 1746255542.447318
+      "created_at": 1746335419.1019962
+    },
+    "Комикс 2": {
+      "filters": [
+        {
+          "name": "Ink",
+          "params": {
+            "size": 1,
+            "color": 1,
+            "thresh": 128
+          },
+          "visible": true
+        },
+        {
+          "name": "Stochastic Dithering",
+          "params": {
+            "size": 50,
+            "mode": 2,
+            "v3": 20,
+            "color": 1,
+            "v5": 10
+          },
+          "visible": true
+        },
+        {
+          "name": "Brightness/Contrast",
+          "params": {
+            "brightness": 0,
+            "contrast": 200
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 300,
+            "brightness": 100
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746434258.1960082
     }
   }
 }

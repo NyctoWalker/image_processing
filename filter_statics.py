@@ -164,18 +164,87 @@ def apply_pencil_sketch(img, ksize=21, sigma=3, gamma=0.5, preserve_color=0, col
         return cv2.cvtColor(255 - sketch, cv2.COLOR_GRAY2RGB)
 
 
-def apply_noise_dither(img, preserve_color=0):
-    h, w = img.shape[:2]
-    blue_noise = np.random.rand(h, w) * 255
-
+def apply_stochastic_diffusion(img, grain_size=0.15, intensity=0.1, preserve_color=0, method=0, threshold_adj=1.0):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    mask = (gray > blue_noise).astype(np.uint8)
+    h, w = gray.shape
+    y, x = np.mgrid[0:h, 0:w]
+    density = grain_size
+
+    if method == 0:  # Шахматы
+        pattern = np.sin(density * x) * np.cos(density * y)
+    elif method == 1:  # Волны
+        pattern = np.sin(density * np.sqrt((x - w / 2) ** 2 + (y - h / 2) ** 2))
+    elif method == 2:  # Штрихи
+        pattern = np.sin(density * (x + y))  # Если поменять знак x/y, поменяется направление полос
+    elif method == 3:  # Спираль
+        angle = np.arctan2(y - h / 2, x - w / 2)
+        radius = np.sqrt((x - w / 2) ** 2 + (y - h / 2) ** 2)
+        pattern = np.sin(density * radius + angle * 5)
+    elif method == 4:  # Ячейки Вороного (~)
+        points_x = np.random.randint(0, w, 10)
+        points_y = np.random.randint(0, h, 10)
+        dist = np.zeros((h, w))
+        for px, py in zip(points_x, points_y):
+            dist += np.sqrt((x - px) ** 2 + (y - py) ** 2)
+        pattern = np.sin(density * dist)
+    elif method == 5:  # Повёрнутые шахматы
+        hex_x = density * (x * 0.5 + y * np.sqrt(3) / 2)
+        hex_y = density * (y * 0.5 - x * np.sqrt(3) / 2)
+        pattern = (np.sin(hex_x) + np.cos(hex_y)) * 0.5
+    elif method == 6:  # Шум
+        phase = np.random.rand(h, w) * 2 * np.pi
+        pattern = np.sin(density * (x * np.cos(phase) + y * np.sin(phase)))
+
+    threshold = ((pattern - pattern.min()) * 255 / (pattern.max() - pattern.min())) * threshold_adj
     if preserve_color == 1:
-        result = np.zeros_like(img)
-        result[mask == 1] = img[mask == 1]
+        mask = (gray > threshold).astype(np.uint8)
+        result = img.copy()
+        result[mask == 0] = result[mask == 0] * (1 - intensity)
         return result
     else:
-        return cv2.cvtColor(mask * 255, cv2.COLOR_GRAY2RGB)
+        dithered = (gray > threshold).astype(np.uint8) * 255
+        return cv2.cvtColor(dithered, cv2.COLOR_GRAY2RGB)
+
+
+@jit(nopython=True, fastmath=True, cache=True)
+def apply_ink_bleed(working, output, kernel, bleed_radius, h, w, threshold):
+    kernel_size = kernel.shape[0]
+    for y in range(h):
+        for x in range(w):
+            old_val = working[y, x]
+            new_val = 255.0 if old_val > threshold else 0.0
+            output[y, x] = new_val
+            error = old_val - new_val
+
+            if error != 0:
+                for ky in range(kernel_size):
+                    for kx in range(kernel_size):
+                        yy = y + (ky - bleed_radius)
+                        xx = x + (kx - bleed_radius)
+                        if 0 <= yy < h and 0 <= xx < w:
+                            working[yy, xx] += error * kernel[ky, kx]
+    return working, output
+
+
+def ink_bleed_dither(img, bleed_radius=2, preserve_color=0, threshold=128):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape
+
+    kernel_size = bleed_radius * 2 + 1
+    y, x = np.ogrid[-bleed_radius:bleed_radius + 1, -bleed_radius:bleed_radius + 1]
+    kernel = np.exp(-(x ** 2 + y ** 2) / (0.5 * bleed_radius ** 2))
+    kernel = (kernel / kernel.sum()).astype(np.float32)
+
+    working = gray.astype(np.float32)
+    output = np.zeros_like(working)
+    working, output = apply_ink_bleed(working, output, kernel, bleed_radius, h, w, threshold)
+    result = np.clip(output, 0, 255).astype(np.uint8)
+
+    if preserve_color:
+        mask = (result < 128)[..., None]
+        return np.where(mask, 0, img).astype(np.uint8)
+    else:
+        return cv2.cvtColor(result, cv2.COLOR_GRAY2RGB)
 # endregion
 
 
@@ -219,6 +288,36 @@ def apply_crt_effect(img, scanline_intensity=0.3, scanline_spacing=2,
     return np.clip(result, 0, 255).astype('uint8')
 
 
+@jit(nopython=True, fastmath=True, cache=True)
+def apply_block_corruption(result, intensity, h, w, block_size, h_blocks, w_blocks):
+    corrupt_mask = np.random.rand(h_blocks, w_blocks) < intensity * 0.3
+    for i in range(h_blocks):
+        for j in range(w_blocks):
+            if corrupt_mask[i, j]:
+                y, x = i * block_size, j * block_size
+                block_end_y = min(y + block_size, h)
+                block_end_x = min(x + block_size, w)
+                result[y:block_end_y, x:block_end_x] = \
+                    np.random.randint(0, 256, (block_end_y-y, block_end_x-x, 3))
+    return result
+
+
+@jit(nopython=True, fastmath=True, cache=True)
+def apply_tear_lines(result, intensity, h, w):
+    tear_lines = np.random.rand(h) < intensity * 0.03
+    tear_shifts = np.random.randint(-int(10 * intensity), int(10 * intensity)+1, size=h)
+    for y in range(h):
+        if tear_lines[y]:
+            shift = tear_shifts[y]
+            if shift > 0:
+                result[y, :shift] = result[y, -shift:]
+                result[y, shift:] = result[y, :-shift]
+            elif shift < 0:
+                result[y, shift:] = result[y, :-shift]
+                result[y, :shift] = result[y, -shift:]
+    return result
+
+
 def apply_distortion(img, intensity=0.5, mode=0):
     h, w = img.shape[:2]
     x, y = np.meshgrid(np.arange(w), np.arange(h))
@@ -226,33 +325,27 @@ def apply_distortion(img, intensity=0.5, mode=0):
     if mode == 0:  # LCD-имитация
         x_distort = x + intensity * 50 * np.sin(y / 30)
         y_distort = y + intensity * 30 * np.cos(x / 40)
-        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC,
-                         borderMode=cv2.BORDER_REPLICATE)
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
     elif mode == 1:  # Искажение сетки пикселей
         cell_size = max(4, int(20 - intensity * 15))
-        x_distort = x + intensity * 10 * np.sin((x // cell_size) * cell_size / 10) * \
-                    np.sin((y // cell_size) * cell_size / 10)
-        y_distort = y + intensity * 10 * np.cos((x // cell_size) * cell_size / 10) * \
-                    np.cos((y // cell_size) * cell_size / 10)
-        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_NEAREST,
-                         borderMode=cv2.BORDER_REPLICATE)
+        x_distort = x + intensity * 10 * np.sin((x // cell_size) * cell_size / 10) * np.sin((y // cell_size) * cell_size / 10)
+        y_distort = y + intensity * 10 * np.cos((x // cell_size) * cell_size / 10) * np.cos((y // cell_size) * cell_size / 10)
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE)
 
     elif mode == 2:  # RGB distortion
         shifted = np.zeros_like(img)
         shift = int(intensity * 10)
         for c in range(3):
             x_shift = x + (c - 1) * shift * np.sin(y / 50)
-            shifted[..., c] = cv2.remap(img[..., c], x_shift.astype(np.float32), y.astype(np.float32), cv2.INTER_CUBIC,
-                                        borderMode=cv2.BORDER_REPLICATE)
+            shifted[..., c] = cv2.remap(img[..., c], x_shift.astype(np.float32), y.astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
         return shifted
 
     elif mode == 3:  # Mission Control
         scanline_freq = max(2, int(10 - intensity * 8))
         scan_distort = intensity * 15 * np.sin(y / scanline_freq)
         x_distort = np.clip(x + scan_distort * np.sin(x / 30), 0, w - 1)
-        result = cv2.remap(img, x_distort.astype(np.float32), y.astype(np.float32), cv2.INTER_LINEAR,
-                           borderMode=cv2.BORDER_REPLICATE)
+        result = cv2.remap(img, x_distort.astype(np.float32), y.astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
         scanlines = np.sin((y % scanline_freq) / scanline_freq * np.pi) * 0.3 + 0.7
         return (result * scanlines[..., None]).astype(np.uint8)
 
@@ -264,10 +357,7 @@ def apply_distortion(img, intensity=0.5, mode=0):
         distort_x = hex_grid_x + hex_size / 2 * np.sin(y / 20) * intensity
         distort_y = hex_grid_y + hex_size / 2 * np.cos(x / 20) * intensity
 
-        distorted = cv2.remap(img,
-                              distort_x.astype(np.float32),
-                              distort_y.astype(np.float32),
-                              cv2.INTER_NEAREST)
+        distorted = cv2.remap(img, distort_x.astype(np.float32), distort_y.astype(np.float32), cv2.INTER_NEAREST)
         return cv2.addWeighted(img, 1 - intensity, distorted, intensity, 0)
 
     elif mode == 5:  # Выгоревшая киноплёнка
@@ -316,25 +406,41 @@ def apply_distortion(img, intensity=0.5, mode=0):
     elif mode == 7:  # VHS-шумы
         result = img.copy()
         intensity = min(3.0, intensity)
+
         if intensity > 0.3:
             block_size = max(2, int(5 - intensity * 3))
             h_blocks, w_blocks = h // block_size, w // block_size
-            corrupt_mask = np.random.rand(h_blocks, w_blocks) < intensity * 0.3
+            result = apply_block_corruption(result, intensity, h, w, block_size, h_blocks, w_blocks)
 
-            for i in range(h_blocks):
-                for j in range(w_blocks):
-                    if corrupt_mask[i, j]:
-                        y, x = i * block_size, j * block_size
-                        result[y:y + block_size, x:x + block_size] = \
-                            np.random.randint(0, 255, (block_size, block_size, 3))
+        if intensity > 0.5:
+            result = apply_tear_lines(result, intensity, h, w)
+
+        return result
 
         if intensity > 0.5:
             tear_lines = np.random.rand(h) < intensity * 0.03
             tear_shifts = np.random.randint(-int(10 * intensity), int(10 * intensity), size=h)
             for y in np.where(tear_lines)[0]:
                 result[y, :] = np.roll(result[y, :], tear_shifts[y], axis=0)
-
         return result
+
+    elif mode == 8:  # Волновая интерференция
+        x_distort = x + intensity * 20 * (np.sin(y / 30) * np.cos(x / 45))
+        y_distort = y + intensity * 20 * (np.cos(x / 25) * np.sin(y / 35))
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+    elif mode == 9:  # Хиральное спиральное искажение
+        center_x, center_y = w//2, h//2
+        radius = np.sqrt((x-center_x)**2 + (y-center_y)**2)
+        angle = np.arctan2(y-center_y, x-center_x)
+        x_distort = x + intensity * 15 * np.sin(radius/20 + angle*3)
+        y_distort = y + intensity * 15 * np.cos(radius/20 + angle*3)
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+    elif mode == 10:  # Тесселяционный фрактал
+        x_distort = x + intensity * 40 * (np.sin(x / 50) * np.sin(y / 60))
+        y_distort = y + intensity * 40 * (np.cos(x / 55) * np.cos(y / 45))
+        return cv2.remap(img, x_distort.astype(np.float32), y_distort.astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
 
 
 def apply_data_mosh(img, block_size=16, corruption_chance=0.3):
@@ -361,8 +467,6 @@ def apply_kaleidoscope(img, segments=3, mode=0, intensity=1.0, outside=0):
     h, w = img.shape[:2]
     center = (w // 2, h // 2)
     y, x = np.ogrid[-center[1]:h - center[1], -center[0]:w - center[0]]
-    radius_classic = min(center[0], center[1])
-    circle_mask_classic = x ** 2 + y ** 2 <= radius_classic ** 2
 
     if mode == 0:  # Пузырь
         radius = int(np.hypot(center[0], center[1]))
@@ -380,7 +484,7 @@ def apply_kaleidoscope(img, segments=3, mode=0, intensity=1.0, outside=0):
             result_polar[:, start:end] = segment[:, :end - start]
 
         result = cv2.linearPolar(result_polar, center, radius, cv2.WARP_INVERSE_MAP)
-        circle_mask = x ** 2 + y ** 2 <= radius ** 2  # Full-image mask
+        circle_mask = x ** 2 + y ** 2 <= radius ** 2
 
     elif mode == 1:  # Срезы
         segments = max(2, min(32, segments))

@@ -648,6 +648,91 @@
         }
       ],
       "created_at": 1746252946.580325
+    },
+    "Psychic": {
+      "filters": [
+        {
+          "name": "Bleach",
+          "params": {},
+          "visible": true
+        },
+        {
+          "name": "Sepia",
+          "params": {},
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": -120,
+            "saturation": 300,
+            "brightness": 110
+          },
+          "visible": true
+        },
+        {
+          "name": "Threshold",
+          "params": {
+            "thresh": 31,
+            "color": 1
+          },
+          "visible": true
+        },
+        {
+          "name": "Stochastic Dithering",
+          "params": {
+            "size": 50,
+            "mode": 2,
+            "v3": 10,
+            "color": 1,
+            "v5": 2
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746335419.1019962
+    },
+    "Комикс 2": {
+      "filters": [
+        {
+          "name": "Ink",
+          "params": {
+            "size": 1,
+            "color": 1,
+            "thresh": 128
+          },
+          "visible": true
+        },
+        {
+          "name": "Stochastic Dithering",
+          "params": {
+            "size": 50,
+            "mode": 2,
+            "v3": 20,
+            "color": 1,
+            "v5": 10
+          },
+          "visible": true
+        },
+        {
+          "name": "Brightness/Contrast",
+          "params": {
+            "brightness": 0,
+            "contrast": 200
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 300,
+            "brightness": 100
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746434258.1960082
     }
   }
 }
