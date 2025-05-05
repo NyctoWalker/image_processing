@@ -315,7 +315,8 @@
         {
           "name": "Chromatic Abberation",
           "params": {
-            "value": 7
+            "shift": 7,
+            "mode": 0
           },
           "visible": true
         }
@@ -354,7 +355,8 @@
         {
           "name": "Chromatic Abberation",
           "params": {
-            "value": 7
+            "shift": 7,
+            "mode": 0
           },
           "visible": true
         },
@@ -440,7 +442,8 @@
         {
           "name": "Chromatic Abberation",
           "params": {
-            "value": 7
+            "shift": 7,
+            "mode": 0
           },
           "visible": true
         },
@@ -538,7 +541,8 @@
         {
           "name": "Chromatic Abberation",
           "params": {
-            "value": 2
+            "shift": 2,
+            "mode": 0
           },
           "visible": true
         }
@@ -662,6 +666,30 @@
         }
       ],
       "created_at": 1746434258.1960082
+    },
+    "Монитор 2": {
+      "filters": [
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 4,
+            "method": "quantize",
+            "num_colors": 12
+          },
+          "visible": true
+        },
+        {
+          "name": "Voxelize Pixels",
+          "params": {
+            "block_size": 24,
+            "height_scale": 20,
+            "angle": 94,
+            "ambient": -8
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746447625.6139276
     }
   }
 }

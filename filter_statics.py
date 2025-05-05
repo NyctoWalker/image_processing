@@ -300,13 +300,75 @@ def resize_image(img, scale_factor=1.0, method=1):
     return img
 
 
-def apply_chromatic_aberration(img, shift=2):
-    h, w, c = img.shape
-    result = np.zeros_like(img)
-    result[:-shift, :-shift, 0] = img[shift:, shift:, 0]
-    result[shift:, shift:, 2] = img[:-shift, :-shift, 2]
-    result[:, :, 1] = img[:, :, 1]
-    return np.clip(result, 0, 255).astype('uint8')
+def apply_chromatic_aberration(img, shift=2, mode=0):
+    if mode == 0:
+        h, w, c = img.shape
+        result = np.zeros_like(img)
+        result[:-shift, :-shift, 0] = img[shift:, shift:, 0]  # B
+        result[shift:, shift:, 2] = img[:-shift, :-shift, 2]  # R
+        result[:, :, 1] = img[:, :, 1]  # G
+    elif mode == 1:
+        intensity = shift / 10
+        h, w = img.shape[:2]
+        center = (w // 2, h // 2)
+        y, x = np.indices((h, w))
+
+        shifts = [
+            (0.0, 0.0, 1.5 * intensity),  # B
+            (0.0, 0.7 * intensity, 0.0),  # G
+            (1.0 * intensity, 0.0, 0.0)  # R
+        ]
+
+        result = np.zeros_like(img)
+        for c in range(3):
+            dx = (x - center[0]) / center[0]
+            dy = (y - center[1]) / center[1]
+            radius = np.sqrt(dx ** 2 + dy ** 2)
+
+            x_shift = shifts[c][0] * radius * dx * 50
+            y_shift = shifts[c][1] * radius * dy * 50
+            x_map = np.clip(x + x_shift, 0, w - 1).astype(np.float32)
+            y_map = np.clip(y + y_shift, 0, h - 1).astype(np.float32)
+
+            remapped = cv2.remap(img[:, :, c], x_map, y_map, cv2.INTER_CUBIC)
+            result[:, :, c] = remapped
+    elif mode == 2:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150 * 2)
+        mask = cv2.dilate(edges, None, iterations=1) / 255.0
+
+        shifted = apply_chromatic_aberration(img, shift, mode=0)
+        result = img * (1 - mask[..., np.newaxis]) + shifted * mask[..., np.newaxis]
+    elif mode == 3:
+        h, w = img.shape[:2]
+        result = img.copy()
+        intensity = shift / 10
+
+        for y in range(0, h, max(1, int(5 - intensity * 3))):
+            if np.random.rand() < intensity * 0.3:
+                stripe_width = np.random.randint(1, 4)
+                x_start = np.random.randint(0, w - stripe_width)
+                if np.random.rand() > 0.5:
+                    result[y, x_start:x_start + stripe_width] = result[y, x_start:x_start + stripe_width, ::-1]
+                else:
+                    result[y, x_start:x_start + stripe_width] = np.random.randint(0, 256, (stripe_width, 3))
+
+        if intensity > 0.3:
+            ch_shifts = [(0, shift), (-shift // 2, 0), (shift, shift // 2)]  # B,G,R
+            channels = []
+            for c, (x_shift, y_shift) in enumerate(ch_shifts):
+                M = np.float32([[1, 0, x_shift], [0, 1, y_shift]])
+                channels.append(cv2.warpAffine(img[:, :, c], M, (w, h), borderMode=cv2.BORDER_REPLICATE))
+            result = cv2.merge(channels)
+
+        noise_mask = np.random.rand(h, w) < intensity * 0.05
+        result[noise_mask] = np.random.randint(0, 256, 3)
+        if intensity > 0.5:
+            for _ in range(int(intensity * 2)):
+                y = np.random.randint(0, h)
+                shift_amount = np.random.randint(-shift * 2, shift * 2 + 1)
+                result[y] = np.roll(result[y], shift_amount, axis=0)
+    return np.clip(result, 0, 255).astype(np.uint8)
 
 
 def apply_crt_effect(img, scanline_intensity=0.3, scanline_spacing=2,
@@ -585,6 +647,56 @@ def apply_kaleidoscope(img, segments=3, mode=0, intensity=1.0, outside=0):
             edge_mask = cv2.dilate(circle_mask.astype(np.uint8), np.ones((5, 5), np.uint8)) - circle_mask
             final[edge_mask == 1] = mirrored[edge_mask == 1]
     return final
+
+
+def apply_oil(img, stride=15, scale=3):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=5)
+    sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
+    result = img.copy()
+    h, w = gray.shape
+
+    for _ in range(5):
+        for y in range(0, h, stride):
+            for x in range(0, w, stride):
+                dx = sobel_x[y, x]
+                dy = sobel_y[y, x]
+                mag = np.sqrt(dx ** 2 + dy ** 2)
+
+                if mag > 5:
+                    nx, ny = dx / mag, dy / mag
+                    x2, y2 = int(x + nx * scale), int(y + ny * scale)
+                    if 0 <= x < w - scale and 0 <= y < h - scale and 0 <= x2 < w - scale and 0 <= y2 < h - scale:
+                        src_region = result[y:y + scale, x:x + scale]
+                        dst_region = result[y2:y2 + scale, x2:x2 + scale]
+                        if src_region.shape == dst_region.shape:
+                            result[y:y + scale, x:x + scale] = cv2.addWeighted(
+                                    src_region, 0.7,
+                                    dst_region, 0.3, 0
+                                )
+    return cv2.medianBlur(result, 11)
+
+
+def vector_field_flow(img, stride=15, scale=3, line_color=(0, 0, 255)):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+
+    result = img.copy()
+    h, w = gray.shape
+
+    for y in range(0, h, stride):
+        for x in range(0, w, stride):
+            dx = sobel_x[y, x]
+            dy = sobel_y[y, x]
+            mag = np.sqrt(dx ** 2 + dy ** 2)
+            if mag > 10:
+                nx, ny = dx / mag, dy / mag
+                x2 = int(x + nx * stride * scale)
+                y2 = int(y + ny * stride * scale)
+                cv2.arrowedLine(result, (x, y), (x2, y2), line_color, 1, tipLength=0.3)
+
+    return result
 # endregion
 
 
@@ -692,6 +804,40 @@ def apply_neon_diffusion(img, intensity=0.7, glow_size=5, style=0, hue_shift=0):
         hsv[..., 0] = (hsv[..., 0] + hue_shift) % 180
         glow = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
     return cv2.addWeighted(img, 1 - intensity, glow, intensity, 0)
+
+
+def apply_ascii_overlay(img, cols=120, brightness=0.7, char_set=1):
+    chars = [
+        " .,:;+*?%S#@",
+        " .'`^,;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+        " -~+*x=",
+        " 01",
+        " -=",
+        " -|",
+        " .",
+        "Oo. "
+    ][char_set]
+
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    h, w = gray.shape
+    cell_w = w / cols
+    cell_h = cell_w * 2
+    rows = int(h / cell_h)
+    small = cv2.resize(gray, (cols, rows), interpolation=cv2.INTER_AREA)
+
+    result = np.zeros_like(img)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = cell_w / 20
+    thickness = max(1, int(scale * 1.5))
+    y_pos = int(cell_h * 0.8)
+
+    for i in range(rows):
+        for j in range(cols):
+            intensity = small[i, j]
+            char_idx = min(int(intensity / 255 * (len(chars) - 1)), len(chars) - 1)
+            color = int(255 * brightness * (intensity / 255))
+            cv2.putText(result, chars[char_idx], (int(j * cell_w), int((i + 1) * cell_h)), font, scale, (color,) * 3, thickness, cv2.LINE_AA)
+    return result
 # endregion
 
 

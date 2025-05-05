@@ -21,7 +21,8 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
     apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
-    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment
+    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment, \
+    vector_field_flow, apply_oil, apply_ascii_overlay
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -363,14 +364,30 @@ FILTER_DEFINITIONS = {
     },
     # endregion
     # region Other
+    "Oil": {
+        "has_params": True,
+        "default_params": {"stride": 24, "size": 6},
+        "display_text": lambda p: f"Тест",
+        "dialog_sliders": [
+            {"label": "Разреженность:", "key": "stride", "min": 12, "max": 32, "value_label": lambda v: str(v)},
+            {"label": "Размер:", "key": "size", "min": 1, "max": 12, "value_label": lambda v: str(v)}
+        ],
+        "apply": lambda img, params: apply_oil(
+            img,
+            params.get("stride", 24),
+            params.get("size", 6)
+        )
+    },
     "Chromatic Abberation": {
         "has_params": True,
-        "default_params": {"value": 3},
-        "display_text": lambda p: f"Хроматическая абберация ({p['value']})",
+        "default_params": {"shift": 3, "mode": 0},
+        "display_text": lambda p: f"Хроматическая абберация ({p['shift']}, режим {p['mode']})",
         "dialog_sliders": [
-            {"label": "Смещение:", "key": "value", "min": 2, "max": 50, "value_label": lambda v: str(v)}
+            {"label": "Смещение:", "key": "shift", "min": 2, "max": 50, "step": 5, "value_label": lambda v: str(v)},
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 3, "step": 1,
+             "value_label": lambda v: ["RGB-модуляция", "Физическое искажение", "Границы", "Помехи"][int(v)]}
         ],
-        "apply": lambda img, params: apply_chromatic_aberration(img, params.get("value", 10))
+        "apply": lambda img, params: apply_chromatic_aberration(img, params.get("shift", 10), params.get("mode", 0))
     },
     "CRT": {
         "has_params": True,
@@ -482,6 +499,24 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
+    "ASCII": {
+        "has_params": True,
+        "default_params": {"size": 120, "brightness": 7, "palette": 1},
+        "display_text": lambda p: f"Тест",
+        "dialog_sliders": [
+            {"label": "Размер символа:", "key": "size", "min": 20, "max": 200, "step": 10, "value_label": lambda v: str(v)},
+            {"label": "Яркость:", "key": "brightness", "min": 1, "max": 30, "value_label": lambda v: str(v/10)},
+            {"label": "Палитра:", "key": "palette", "min": 0, "max": 7, "step": 1,
+             "value_label": lambda v: ["Базовая", "Сложная", "Математика", "Двоичная", "Горизонтальная",
+                                       "Линии", "Чёрно-белая", "Реверс"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_ascii_overlay(
+            img,
+            params.get("size", 120),
+            params.get("brightness", 7)/10,
+            params.get("palette", 0),
+        )
+    },
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -497,6 +532,7 @@ FILTER_DISPLAY_NAMES = {
     "Posterize": "Пастеризация",
     "Stepped Gradient": "Ступенчатый градиент",
     "Duotone Gradient": "Двутональный градиент",
+    "ASCII": "ASCII-подобный",
     "Invert": "Инверсия",
     "Sepia": "Сепия",
     "Grayscale": "Ч/Б (градации серого)",
@@ -507,6 +543,7 @@ FILTER_DISPLAY_NAMES = {
     "Stochastic Dithering": "Стохастический дизеринг",
     "Ink": "Чернила (диффузия)",
     "Cellular Dither": "Грязь (диффузия)",
+    "Oil": "Масляные краски",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
