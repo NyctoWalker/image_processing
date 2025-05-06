@@ -22,7 +22,7 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
     apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
     apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment, \
-    vector_field_flow, apply_oil, apply_ascii_overlay
+    vector_field_flow, apply_oil, apply_ascii_overlay, apply_biological_vision
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -87,6 +87,23 @@ FILTER_DEFINITIONS = {
             img,
             params.get('brightness', 0),
             params.get('contrast', 100)
+        )
+    },
+    "Biological Vision": {
+        "has_params": True,
+        "default_params": {"intensity": 10, "palette": 1},
+        "display_text": lambda p: f"Тест",
+        "dialog_sliders": [
+            {"label": "v2:", "key": "intensity", "min": 0, "max": 10, "value_label": lambda v: str(v)},
+            {"label": "v3:", "key": "palette", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: ["Обычное зрение", "Протанопия (-красный)", "Дейтеранопия (-зелёный)",
+                                       "Тританопия(-синий)", "Зрение собаки", "Зрение кошки", "Птица (RGB+УФ)",
+                                       "Пчела (УФ)", "Змея (ИК)", "Рак-богомол", "Deep Sea creature :)"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_biological_vision(
+            img,
+            params.get("palette", 1),
+            params.get("intensity", 10) / 10,
         )
     },
     # endregion
@@ -269,6 +286,25 @@ FILTER_DEFINITIONS = {
             params.get("hue1", 0),
             params.get("hue2", 180),
             blend_mode=params.get("blend", 0)
+        )
+    },
+    "ASCII": {
+        "has_params": True,
+        "default_params": {"size": 120, "brightness": 7, "palette": 1},
+        "display_text": lambda p: f"ASCII ({p['size']}/{p['brightness']/10}, палитра {p['palette']})",
+        "dialog_sliders": [
+            {"label": "Плотность:", "key": "size", "min": 20, "max": 400, "step": 20,
+             "value_label": lambda v: str(v)},
+            {"label": "Яркость:", "key": "brightness", "min": 1, "max": 30, "value_label": lambda v: str(v / 10)},
+            {"label": "Палитра:", "key": "palette", "min": 0, "max": 9, "step": 1,
+             "value_label": lambda v: ["Базовая", "Сложная", "Математика", "Двоичная", "Горизонтальная",
+                                       "Линии", "Чёрно-белая", "Реверс", "Цифры", "Алфавит"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_ascii_overlay(
+            img,
+            params.get("size", 120),
+            params.get("brightness", 7) / 10,
+            params.get("palette", 0),
         )
     },
     # endregion
@@ -499,30 +535,13 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
-    "ASCII": {
-        "has_params": True,
-        "default_params": {"size": 120, "brightness": 7, "palette": 1},
-        "display_text": lambda p: f"Тест",
-        "dialog_sliders": [
-            {"label": "Размер символа:", "key": "size", "min": 20, "max": 200, "step": 10, "value_label": lambda v: str(v)},
-            {"label": "Яркость:", "key": "brightness", "min": 1, "max": 30, "value_label": lambda v: str(v/10)},
-            {"label": "Палитра:", "key": "palette", "min": 0, "max": 7, "step": 1,
-             "value_label": lambda v: ["Базовая", "Сложная", "Математика", "Двоичная", "Горизонтальная",
-                                       "Линии", "Чёрно-белая", "Реверс"][int(v)]},
-        ],
-        "apply": lambda img, params: apply_ascii_overlay(
-            img,
-            params.get("size", 120),
-            params.get("brightness", 7)/10,
-            params.get("palette", 0),
-        )
-    },
 }
 
 FILTER_DISPLAY_NAMES = {
     "HSB Adjustment": "Цветокоррекция HSB",
     "HSB Set": "Установка значений HSB",
     "Brightness/Contrast": "Яркость/Контрастность",
+    "Biological Vision": "Имитация зрения",
     "Blur": "Размытие (Блюр)",
     "Edge Detection": "Детекция краёв",
     "Sketch": "Скетч/Карандаш",
