@@ -22,7 +22,8 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
     apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
     apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment, \
-    vector_field_flow, apply_oil, apply_ascii_overlay, apply_biological_vision
+    vector_field_flow, apply_oil, apply_ascii_overlay, apply_biological_vision, apply_molecular_effect, \
+    apply_lenticular_effect, apply_cubist_effect, topographical_map
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -92,10 +93,10 @@ FILTER_DEFINITIONS = {
     "Biological Vision": {
         "has_params": True,
         "default_params": {"intensity": 10, "palette": 1},
-        "display_text": lambda p: f"Тест",
+        "display_text": lambda p: f"Имитация зрения ({p['intensity']/10}, режим {p['palette']})",
         "dialog_sliders": [
-            {"label": "v2:", "key": "intensity", "min": 0, "max": 10, "value_label": lambda v: str(v)},
-            {"label": "v3:", "key": "palette", "min": 0, "max": 10, "step": 1,
+            {"label": "Интенсивность:", "key": "intensity", "min": 0, "max": 10, "value_label": lambda v: str(v/10)},
+            {"label": "Режим:", "key": "palette", "min": 0, "max": 10, "step": 1,
              "value_label": lambda v: ["Обычное зрение", "Протанопия (-красный)", "Дейтеранопия (-зелёный)",
                                        "Тританопия(-синий)", "Зрение собаки", "Зрение кошки", "Птица (RGB+УФ)",
                                        "Пчела (УФ)", "Змея (ИК)", "Рак-богомол", "Deep Sea creature :)"][int(v)]},
@@ -414,6 +415,21 @@ FILTER_DEFINITIONS = {
             params.get("size", 6)
         )
     },
+    "Molecular": {
+        "has_params": True,
+        "default_params": {"scale": 2, "thresh": 30},
+        "display_text": lambda p: f"Вышивка (размер {p['scale']}, порог {p['thresh']})",
+        "dialog_sliders": [
+            {"label": "Размер ячейки:", "key": "scale", "min": 1, "max": 6, "value_label": lambda v: str(v)},
+            {"label": "Порог:", "key": "thresh", "min": 1, "max": 255,
+             "value_label": lambda v: str(v)},
+        ],
+        "apply": lambda img, params: apply_molecular_effect(
+            img,
+            params.get("scale", 2) / 10,
+            params.get("thresh", 30),
+        )
+    },
     "Chromatic Abberation": {
         "has_params": True,
         "default_params": {"shift": 3, "mode": 0},
@@ -461,6 +477,25 @@ FILTER_DEFINITIONS = {
             params.get("height_scale", 3)/10,
             params.get("angle", 45),
             params.get("ambient", 3)/10,
+        )
+    },
+    "Topographical": {
+        "has_params": True,
+        "default_params": {"levels": 8, "thickness": 1, "brightness": 8, "contrast": 5},
+        "display_text": lambda p: f"Топографические высоты (контраст {p['contrast']/10})",
+        "dialog_sliders": [
+            {"label": "Доп. контуры:", "key": "levels", "min": 2, "max": 16, "value_label": lambda v: str(v)},
+            {"label": "Жирность контуров:", "key": "thickness", "min": 1, "max": 3, "value_label": lambda v: str(v)},
+            {"label": "Яркость контуров:", "key": "brightness", "min": 1, "max": 30,
+             "value_label": lambda v: str(v / 10)},
+            {"label": "Контраст высот:", "key": "contrast", "min": 0, "max": 20, "value_label": lambda v: str(v / 10)},
+        ],
+        "apply": lambda img, params: topographical_map(
+            img,
+            params.get("levels", 8),
+            params.get("thickness", 1),
+            params.get("brightness", 8) / 10,
+            elevation_brightness_boost=params.get("contrast", 5) / 10
         )
     },
     "Neon": {
@@ -534,6 +569,36 @@ FILTER_DEFINITIONS = {
             params.get('outside', 0)
         )
     },
+    "Lenticular Lense": {
+        "has_params": True,
+        "default_params": {"views": 3, "size": 5, "distortion": 3},
+        "display_text": lambda p: f"Лентикулярная линза ({p['views']} цвета, размер {p['size']}, искажение {p['distortion']/10})",
+        "dialog_sliders": [
+            {"label": "Кол-во цветов:", "key": "views", "min": 2, "max": 30, "value_label": lambda v: str(v)},
+            {"label": "Размер полос:", "key": "size", "min": 1, "max": 30, "value_label": lambda v: str(v)},
+            {"label": "Искажение:", "key": "distortion", "min": -20, "max": 20, "step": 1, "value_label": lambda v: str(v/10)},
+        ],
+        "apply": lambda img, params: apply_lenticular_effect(
+            img,
+            params.get("views", 3),
+            params.get("size", 5),
+            params.get("distortion", 5)/10 if params.get("distortion", 5) >= 0 else params.get("distortion", 5)/2,
+        )
+    },
+    "Cubism": {
+        "has_params": True,
+        "default_params": {"scale": 50, "distortion": 5},
+        "display_text": lambda p: f"Кубизм/Мозаика (разм. {p['scale']}, искаж. {p['distortion']/10})",
+        "dialog_sliders": [
+            {"label": "Размер мозаики:", "key": "scale", "min": 10, "max": 100, "step": 5, "value_label": lambda v: str(v)},
+            {"label": "Искажение:", "key": "distortion", "min": 1, "max": 16, "value_label": lambda v: str(v/10)},
+        ],
+        "apply": lambda img, params: apply_cubist_effect(
+            img,
+            params.get("scale", 50),
+            params.get("distortion", 3) / 10
+        )
+    },
     # endregion
 }
 
@@ -563,13 +628,17 @@ FILTER_DISPLAY_NAMES = {
     "Ink": "Чернила (диффузия)",
     "Cellular Dither": "Грязь (диффузия)",
     "Oil": "Масляные краски",
+    "Molecular": "Вышивка",
     "CRT": "CRT-фильтр",
     "Chromatic Abberation": "Хроматическая абберация",
     "Voxelize Pixels": "Вокселизация пикселей/Вангеры :)",
+    "Topographical": "Топография пикселей/Вангеры 2 :)",
     "Neon": "Свечение/Неон",
     "Distortion": "Искажение",
     "Glitch": "Имитация ошибок",
     "Kaleidoscope": "Калейдоскоп",
+    "Lenticular Lense": "Лентикулярная линза",
+    "Cubism": "Кубизм/Мозаика (тяжёлый)",
 }
 
 

@@ -690,6 +690,73 @@
         }
       ],
       "created_at": 1746447625.6139276
+    },
+    "Витраж": {
+      "filters": [
+        {
+          "name": "Cubism",
+          "params": {
+            "scale": 10,
+            "distortion": 5
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Set",
+          "params": {
+            "hue": 0,
+            "hue_on": 0,
+            "saturation": 185,
+            "sat_on": 1,
+            "brightness": 200,
+            "bright_on": 0
+          },
+          "visible": true
+        },
+        {
+          "name": "Lenticular Lense",
+          "params": {
+            "views": 3,
+            "size": 5,
+            "distortion": 1
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746542732.4027777
+    },
+    "Объём": {
+      "filters": [
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 4,
+            "method": "quantize",
+            "num_colors": 10
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 0,
+            "saturation": 150,
+            "brightness": 100
+          },
+          "visible": true
+        },
+        {
+          "name": "Topographical",
+          "params": {
+            "levels": 2,
+            "thickness": 3,
+            "brightness": 30,
+            "contrast": 10
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746602310.4661014
     }
   }
 }

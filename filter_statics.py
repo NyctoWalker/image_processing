@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
-from numba import jit
+from numba import jit, prange
+import random
+import math
 
 
 # region HSB/Pixel modify
@@ -788,6 +790,96 @@ def vector_field_flow(img, stride=15, scale=3, line_color=(0, 0, 255)):
                 cv2.arrowedLine(result, (x, y), (x2, y2), line_color, 1, tipLength=0.3)
 
     return result
+
+
+def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
+    h, w = img.shape[:2]
+    small_h, small_w = int(h * atom_scale), int(w * atom_scale)
+
+    small = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_AREA)
+    lab = cv2.cvtColor(small, cv2.COLOR_RGB2LAB)
+    l, a, b = cv2.split(lab)
+    # Псевдо-3Д
+    xx, yy = np.meshgrid(np.arange(small_w), np.arange(small_h))
+    zz = l / 255.0 * small_h
+    positions = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
+    colors = small.reshape(-1, 3)
+
+    grad_x = cv2.Sobel(l, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(l, cv2.CV_64F, 0, 1, ksize=3)
+    grad_mag = np.sqrt(grad_x ** 2 + grad_y ** 2)
+
+    result = np.full((h, w, 3), 40, dtype=np.uint8)
+    # "Связи"
+    for y in range(small_h - 1):
+        for x in range(small_w - 1):
+            if grad_mag[y, x] > bond_threshold:
+                for dy, dx in [(0, 1), (1, 0)]:
+                    ny, nx = y + dy, x + dx
+                    if ny < small_h and nx < small_w and grad_mag[ny, nx] > bond_threshold:
+                        color = (small[y, x] + small[ny, nx]) // 2
+                        cv2.line(result,
+                                 (int(x / atom_scale), int(y / atom_scale)),
+                                 (int(nx / atom_scale), int(ny / atom_scale)),
+                                 color.tolist(), 1)
+    # "Атомы"
+    for i, (x, y, z) in enumerate(positions):
+        radius = max(1, int(3 * z / small_h))
+        cv2.circle(result, (int(x / atom_scale), int(y / atom_scale)), radius, colors[i].tolist(), -1)
+        if radius > 2:
+            cv2.circle(result, (int(x / atom_scale), int(y / atom_scale)), max(1, radius // 3), [min(c + 100, 255) for c in colors[i]], -1)
+    return result
+
+
+@jit(nopython=True, parallel=True, fastmath=True)
+def create_lenticular_pattern(h, w, views, lens_width):
+    pattern = np.zeros((h, w), dtype=np.uint8)
+    for y in prange(h):
+        for x in prange(w):
+            pattern[y, x] = (x // lens_width) % views
+    return pattern
+
+
+@jit(nopython=True, parallel=True, fastmath=True)
+def apply_distortion_maps(x_map, y_map, h, w, distortion_strength):
+    center_x = w // 2
+    center_y = h // 2
+    max_dist = max(center_x, center_y)
+
+    for y in prange(h):
+        for x in prange(w):
+            nx = (x - center_x) / center_x
+            ny = (y - center_y) / center_y
+            r = np.sqrt(nx ** 2 + ny ** 2)
+            theta = 1.0 - distortion_strength * r ** 2
+            x_map[y, x] = (nx * theta * center_x) + center_x
+            y_map[y, x] = (ny * theta * center_y) + center_y
+    return x_map, y_map
+
+
+def apply_lenticular_effect(img, views=3, lens_width=5, distortion_strength=0.3):
+    h, w = img.shape[:2]
+
+    shifts = []
+    for i in range(views):
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+        hsv[..., 0] = (hsv[..., 0] + (i * 30)) % 180
+        shifts.append(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB))
+
+    lens_pattern = create_lenticular_pattern(h, w, views, lens_width)
+    result = np.zeros_like(img)
+    for i in range(views):
+        mask = (lens_pattern == i)[..., None]
+        result = np.where(mask, shifts[i], result)
+    x_map = np.zeros((h, w), dtype=np.float32)
+    y_map = np.zeros((h, w), dtype=np.float32)
+    x_map, y_map = apply_distortion_maps(x_map, y_map, h, w, distortion_strength)
+
+    distorted = np.zeros_like(result)
+    for c in range(3):
+        distorted[..., c] = cv2.remap(result[..., c], x_map, y_map, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+    return np.clip(distorted, 0, 255).astype('uint8')
 # endregion
 
 
@@ -961,11 +1053,168 @@ def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_angle=45, ambi
     return np.clip(result, 0, 255).astype('uint8')
 
 
+def topographical_map(img, contour_levels=12, line_thickness=1, elevation_contrast=1.5, line_brightness=0.3, elevation_brightness_boost=0.5):
+    img = img.astype(np.uint8)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+
+    heightmap = cv2.GaussianBlur(gray, (7, 7), 0)
+    heightmap = cv2.normalize(heightmap, None, 0, 255, cv2.NORM_MINMAX)
+    adjusted = 255 * np.power(heightmap / 255, 1 / max(0.1, elevation_contrast))
+    adjusted = cv2.normalize(adjusted, None, 0, 255, cv2.NORM_MINMAX)
+
+    bins = np.linspace(0, 255, contour_levels + 1)
+    quantized = np.digitize(adjusted, bins[1:-1]).astype(np.uint8)
+
+    edges = np.zeros_like(quantized, dtype=np.uint8)
+    for level in np.unique(quantized):
+        mask = (quantized == level).astype(np.uint8) * 255
+        level_edges = cv2.Canny(mask, 50, 150)
+        edges = cv2.bitwise_or(edges, level_edges)
+
+    if line_thickness > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*line_thickness+1, 2*line_thickness+1))
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        edges = cv2.dilate(edges, kernel, iterations=1)
+
+        grad_x = cv2.Sobel(adjusted, cv2.CV_32F, 1, 0, ksize=5)
+        grad_y = cv2.Sobel(adjusted, cv2.CV_32F, 0, 1, ksize=5)
+        slope = np.sqrt(grad_x**2 + grad_y**2)
+
+        light_dir = np.array([-0.5, -0.7, 0.5])
+        normal = np.dstack((-grad_x, -grad_y, np.ones_like(grad_x)))
+        normal_norm = np.linalg.norm(normal, axis=2, keepdims=True)
+        normal /= np.where(normal_norm > 0, normal_norm, 1)
+        shading = np.dot(normal, light_dir)
+
+        elevation_scale = 1 + (adjusted/255) * elevation_brightness_boost
+        valley_shadows = 1 - (1 - cv2.normalize(adjusted, None, 0, 1, cv2.NORM_MINMAX)) * elevation_brightness_boost
+        shading = shading * elevation_scale * valley_shadows
+        shading = np.clip(shading, 0.3, 1.8)
+
+        contour_mask = edges.astype(np.float32) / 255.0
+        contour_effect = contour_mask * line_brightness * (0.7 + 0.3*(adjusted/255))
+        shaded = img.astype(np.float32) * shading[..., None]
+        result = shaded + (contour_effect[..., None] * 60)
+        result = np.clip(result, 0, 255)
+    else:
+        result = img.astype(np.float32)
+
+    return result.astype(np.uint8)
+
+
 def glitchy_pixelation(img, base_size=4, channel_shift=3):
     r = pixelize_image(img[..., 0], base_size + channel_shift)
     g = pixelize_image(img[..., 1], base_size)
     b = pixelize_image(img[..., 2], base_size - channel_shift)
     return cv2.merge((r, g, b))
+
+
+@jit(nopython=True, fastmath=True)
+def _generate_fragments(h, w, fragment_size):
+    grid_x = np.arange(0, w + fragment_size, fragment_size)
+    grid_y = np.arange(0, h + fragment_size, fragment_size)
+    centers = []
+    for y in grid_y:
+        for x in grid_x:
+            centers.append((
+                x + random.randint(-fragment_size // 2, fragment_size // 2),
+                y + random.randint(-fragment_size // 2, fragment_size // 2)
+            ))
+    return centers
+
+
+@jit(nopython=True, parallel=True, fastmath=True)
+def _apply_fragments(img, centers, fragment_size, distortion_strength):
+    h, w = img.shape[:2]
+    result = np.zeros_like(img)
+    count = np.zeros((h, w), dtype=np.float32)
+
+    for i in prange(len(centers)):
+        cx, cy = centers[i]
+        radius = fragment_size * (0.8 + random.random() * 0.4)
+        sides = random.randint(3, 5)
+        mask = _create_polygon_mask(h, w, cx, cy, radius, sides, distortion_strength)
+
+        total_r = total_g = total_b = 0.0
+        pixels = 0
+        for y in range(h):
+            for x in range(w):
+                if mask[y, x]:
+                    total_r += img[y, x, 0]
+                    total_g += img[y, x, 1]
+                    total_b += img[y, x, 2]
+                    pixels += 1
+
+        if pixels > 0:
+            avg_r = total_r / pixels
+            avg_g = total_g / pixels
+            avg_b = total_b / pixels
+
+            dev_r = random.uniform(-40, 40)
+            dev_g = random.uniform(-40, 40)
+            dev_b = random.uniform(-40, 40)
+            frag_r = min(max(avg_r + dev_r, 0), 255)
+            frag_g = min(max(avg_g + dev_g, 0), 255)
+            frag_b = min(max(avg_b + dev_b, 0), 255)
+
+            alpha = 0.7 + random.random() * 0.3
+            for y in range(h):
+                for x in range(w):
+                    if mask[y, x]:
+                        result[y, x, 0] = result[y, x, 0] * (1 - alpha) + frag_r * alpha
+                        result[y, x, 1] = result[y, x, 1] * (1 - alpha) + frag_g * alpha
+                        result[y, x, 2] = result[y, x, 2] * (1 - alpha) + frag_b * alpha
+                        count[y, x] += alpha
+
+    for y in prange(h):
+        for x in prange(w):
+            if count[y, x] > 0:
+                result[y, x] = result[y, x] / count[y, x]
+
+    return result.astype(np.uint8)
+
+
+@jit(nopython=True, fastmath=True)
+def _create_polygon_mask(h, w, cx, cy, radius, sides, distortion_strength):
+    mask = np.zeros((h, w), dtype=np.uint8)
+    polygon = []
+
+    for i in range(sides):
+        angle = 2 * math.pi * i / sides
+        offset_x = radius * math.cos(angle) * (1 + random.random() * distortion_strength)
+        offset_y = radius * math.sin(angle) * (1 + random.random() * distortion_strength)
+        polygon.append((cx + offset_x, cy + offset_y))
+
+    min_y = max(0, int(cy - radius))
+    max_y = min(h, int(cy + radius))
+    min_x = max(0, int(cx - radius))
+    max_x = min(w, int(cx + radius))
+
+    for y in range(min_y, max_y):
+        for x in range(min_x, max_x):
+            inside = False
+            n = len(polygon)
+            p1x, p1y = polygon[0]
+            for i in range(n + 1):
+                p2x, p2y = polygon[i % n]
+                if y > min(p1y, p2y):
+                    if y <= max(p1y, p2y):
+                        if x <= max(p1x, p2x):
+                            if p1y != p2y:
+                                xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                            if p1x == p2x or x <= xinters:
+                                inside = not inside
+                p1x, p1y = p2x, p2y
+            if inside:
+                mask[y, x] = 1
+    return mask
+
+
+def apply_cubist_effect(img, fragment_size=50, distortion_strength=0.3):
+    h, w = img.shape[:2]
+    img = np.ascontiguousarray(img)
+    centers = _generate_fragments(h, w, fragment_size)
+    return _apply_fragments(img, centers, fragment_size, distortion_strength)
 # endregion
 
 

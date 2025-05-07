@@ -443,7 +443,7 @@
           "name": "Chromatic Abberation",
           "params": {
             "shift": 7,
-            "mode": 0
+            "mode": 1
           },
           "visible": true
         },
@@ -467,7 +467,7 @@
           "visible": true
         }
       ],
-      "created_at": 1746022402.4757707
+      "created_at": 1746458040.9933808
     },
     "Комикс": {
       "filters": [
@@ -690,6 +690,40 @@
         }
       ],
       "created_at": 1746447625.6139276
+    },
+    "Витраж": {
+      "filters": [
+        {
+          "name": "Cubism",
+          "params": {
+            "scale": 10,
+            "distortion": 5
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Set",
+          "params": {
+            "hue": 0,
+            "hue_on": 0,
+            "saturation": 185,
+            "sat_on": 1,
+            "brightness": 200,
+            "bright_on": 0
+          },
+          "visible": true
+        },
+        {
+          "name": "Lenticular Lense",
+          "params": {
+            "views": 3,
+            "size": 5,
+            "distortion": 1
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1746542732.4027777
     }
   }
 }
