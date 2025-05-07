@@ -2,6 +2,10 @@
 ## RU
 **Image Processor** — приложение с открытым исходным кодом для обработки изображений на основе блочной структуры фильтров.
 
+Для использования предлагается установить сборку приложения из списка релизов или клонировать репозиторий при помощи ```git clone https://github.com/yourusername/image-processor.git``` с установкой зависимостей (```requirements.txt```) и запуска скрипта ```main.py``` при помощи Python-компилятора.
+
+При использовании кода решения, пожалуйста, ознакомьтесь со стандартной [лицензией](https://github.com/NyctoWalker/image_processing/blob/master/LICENSE.md).
+
 **Основные особенности:**
 - 30+ настраиваемых фильтров с поддержкой шаблонов
 - Основные технологии:
@@ -18,6 +22,10 @@
 
 ## EN
 **Image Processor** — an open-source image processing application with modular filter architecture.
+
+For use, it is suggested to instal build from releases list or clone repo with the following command: ```git clone https://github.com/yourusername/image-processor.git```. In that case, install libraries from ```requirements.txt``` and launch ```main.py``` with Python compilator.
+
+If you want to use the code from here, please, check the basic [license](https://github.com/NyctoWalker/image_processing/blob/master/LICENSE.md).
 
 **General information:**
 - 30+ configurable filters with preset support
