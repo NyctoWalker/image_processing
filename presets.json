@@ -757,6 +757,49 @@
         }
       ],
       "created_at": 1746602310.4661014
+    },
+    "Low colors": {
+      "filters": [
+        {
+          "name": "Pixel Art",
+          "params": {
+            "pixel_size": 1,
+            "method": "quantize",
+            "num_colors": 12
+          },
+          "visible": true
+        },
+        {
+          "name": "Threshold",
+          "params": {
+            "thresh": 57,
+            "color": 1
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Set",
+          "params": {
+            "hue": 0,
+            "hue_on": 0,
+            "saturation": 165,
+            "sat_on": 1,
+            "brightness": 200,
+            "bright_on": 0
+          },
+          "visible": true
+        },
+        {
+          "name": "HSB Adjustment",
+          "params": {
+            "hue": 6,
+            "saturation": 122,
+            "brightness": 113
+          },
+          "visible": true
+        }
+      ],
+      "created_at": 1751033422.4656272
     }
   }
 }

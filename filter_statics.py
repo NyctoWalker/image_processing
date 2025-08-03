@@ -880,6 +880,42 @@ def apply_lenticular_effect(img, views=3, lens_width=5, distortion_strength=0.3)
         distorted[..., c] = cv2.remap(result[..., c], x_map, y_map, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
     return np.clip(distorted, 0, 255).astype('uint8')
+
+
+def apply_pinch_warp(img,
+               strength=0.5,
+               center_x=0.5,
+               center_y=0.5,
+               rotation=0.0):
+    h, w = img.shape[:2]
+    cx, cy = center_x * w, center_y * h
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    x -= cx
+    y -= cy
+
+    r = np.sqrt(x * x + y * y)
+    r = np.maximum(r, 1e-6)
+    factor = 1.0 / ((1.0 + strength * r / max(h, w)) + 10e-9)
+    x2 = x * factor
+    y2 = y * factor
+
+    if rotation != 0:
+        theta = np.deg2rad(rotation)
+        cos_t, sin_t = np.cos(theta), np.sin(theta)
+        xr = x2 * cos_t - y2 * sin_t
+        yr = x2 * sin_t + y2 * cos_t
+    else:
+        xr, yr = x2, y2
+
+    map_x = xr + cx
+    map_y = yr + cy
+
+    border = cv2.BORDER_WRAP
+    return cv2.remap(img,
+                     map_x.astype(np.float32),
+                     map_y.astype(np.float32),
+                     cv2.INTER_CUBIC,
+                     borderMode=border)
 # endregion
 
 
@@ -1297,3 +1333,5 @@ def pixelize_dither(img, pixel_size=8, dither_strength=0.5):
 
     return cv2.resize(result, (w, h), interpolation=cv2.INTER_NEAREST)
 # endregion
+
+

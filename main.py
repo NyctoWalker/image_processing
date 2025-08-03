@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QImage
 import cv2
 import numpy as np
 import time
@@ -23,7 +23,7 @@ from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixe
     apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
     apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment, \
     vector_field_flow, apply_oil, apply_ascii_overlay, apply_biological_vision, apply_molecular_effect, \
-    apply_lenticular_effect, apply_cubist_effect, topographical_map
+    apply_lenticular_effect, apply_cubist_effect, topographical_map, apply_pinch_warp
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -404,7 +404,7 @@ FILTER_DEFINITIONS = {
     "Oil": {
         "has_params": True,
         "default_params": {"stride": 24, "size": 6},
-        "display_text": lambda p: f"Тест",
+        "display_text": lambda p: f"Масляные краски",
         "dialog_sliders": [
             {"label": "Разреженность:", "key": "stride", "min": 12, "max": 32, "value_label": lambda v: str(v)},
             {"label": "Размер:", "key": "size", "min": 1, "max": 12, "value_label": lambda v: str(v)}
@@ -585,6 +585,24 @@ FILTER_DEFINITIONS = {
             params.get("distortion", 5)/10 if params.get("distortion", 5) >= 0 else params.get("distortion", 5)/2,
         )
     },
+    "Gravi Lens": {
+        "has_params": True,
+        "default_params": {"distortion": -25, "cx": 15, "cy": 15, "angle": 0},
+        "display_text": lambda p: f"Гравитационная линза",
+        "dialog_sliders": [
+            {"label": "Искажение:", "key": "distortion", "min": -125, "max": 125, "value_label": lambda v: str(v / 25)},
+            {"label": "Центр(x):", "key": "cx", "min": 0, "max": 30, "value_label": lambda v: f"{v / 0.3:.2f}%"},
+            {"label": "Центр(y):", "key": "cy", "min": 0, "max": 30, "value_label": lambda v: f"{v / 0.3:.2f}%"},
+            {"label": "Поворот:", "key": "angle", "min": -36, "max": 36, "value_label": lambda v: f"{v * 5} градусов"},
+        ],
+        "apply": lambda img, params: apply_pinch_warp(
+            img,
+            params.get("distortion", -25) / 25,
+            params.get("cx", 15) / 30,
+            params.get("cy", 15) / 30,
+            params.get("angle", 0) * 5,
+        )
+    },
     "Cubism": {
         "has_params": True,
         "default_params": {"scale": 50, "distortion": 5},
@@ -600,6 +618,24 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
+    "Test": {
+        "has_params": True,
+        "default_params": {"t1": 25, "t2": 25, "t3": 25, "t4": 0},
+        "display_text": lambda p: f"Тест",
+        "dialog_sliders": [
+            {"label": "t1:", "key": "t1", "min": -200, "max": 200, "value_label": lambda v: str(v / 50)},
+            {"label": "t2:", "key": "t2", "min": 0, "max": 50, "value_label": lambda v: str(v / 50)},
+            {"label": "t3:", "key": "t3", "min": 0, "max": 50, "value_label": lambda v: str(v / 50)},
+            {"label": "t4:", "key": "t4", "min": -36, "max": 36, "value_label": lambda v: str(v)},
+        ],
+        "apply": lambda img, params: apply_pinch_warp(
+            img,
+            params.get("t1", 25) / 50,
+            params.get("t2", 25) / 50,
+            params.get("t3", 25) / 50,
+            params.get("t4", 0) * 5,
+        )
+    },
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -638,7 +674,9 @@ FILTER_DISPLAY_NAMES = {
     "Glitch": "Имитация ошибок",
     "Kaleidoscope": "Калейдоскоп",
     "Lenticular Lense": "Лентикулярная линза",
+    "Gravi Lens": "Гравитационная линза",
     "Cubism": "Кубизм/Мозаика (тяжёлый)",
+    "Test": "Тест",
 }
 
 
@@ -1232,20 +1270,24 @@ class FilterApp(QMainWindow):
             "Изображения (*.png *.jpg *.jpeg *.bmp)"
         )
         if file_path:
-            self.image = cv2.imread(file_path)
-            if self.image is not None:
-                self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-                self.original_image = self.image.copy()
-
-                self.cache.clear()
-                self.dirty_flags = [True] * len(self.filters)
-
-                self.preview_mode = False
-                self.preview_filter_params = None
-                self.show_image(self.filtered_image)
-                self.update_display()
-            else:
+            qimg = QImage(file_path)
+            if qimg.isNull():
                 QMessageBox.warning(self, "Ошибка", "Не удалось загрузить изображение!")
+                return
+
+            qimg = qimg.convertToFormat(QImage.Format.Format_RGB888)
+            ptr = qimg.bits()
+            ptr.setsize(qimg.height() * qimg.width() * 3)
+            arr = np.frombuffer(ptr, np.uint8).reshape((qimg.height(), qimg.width(), 3))
+
+            self.image = arr.copy()
+            self.original_image = arr.copy()
+
+            self.cache.clear()
+            self.dirty_flags = [True] * len(self.filters)
+            self.preview_mode = False
+            self.preview_filter_params = None
+            self.update_display()
 
     def save_image(self):
         if self.filtered_image is None:
