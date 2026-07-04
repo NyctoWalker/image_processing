@@ -367,17 +367,12 @@ def apply_distortion_maps(x_map, y_map, h, w, distortion_strength):
 def apply_lenticular_effect(img, views=3, lens_width=5, distortion_strength=0.3):
     h, w = img.shape[:2]
 
-    shifts = []
-    for i in range(views):
-        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-        hsv[..., 0] = (hsv[..., 0] + (i * 30)) % 180
-        shifts.append(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB))
-
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
     lens_pattern = create_lenticular_pattern(h, w, views, lens_width)
-    result = np.zeros_like(img)
-    for i in range(views):
-        mask = (lens_pattern == i)[..., None]
-        result = np.where(mask, shifts[i], result)
+
+    hue_shifts = (lens_pattern.astype(np.int16) * 30) % 180
+    hsv[..., 0] = (hsv[..., 0].astype(np.int16) + hue_shifts) % 180
+    result = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
     x_map = np.zeros((h, w), dtype=np.float32)
     y_map = np.zeros((h, w), dtype=np.float32)
     x_map, y_map = apply_distortion_maps(x_map, y_map, h, w, distortion_strength)

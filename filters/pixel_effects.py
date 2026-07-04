@@ -264,6 +264,78 @@ def vector_field_flow(img, stride=15, scale=3, line_color=(0, 0, 255)):
     return result
 
 
+@jit(nopython=True, cache=True, fastmath=True)
+def _draw_bonds_numba(result, mask, small, xs, ys):
+    small_h, small_w = mask.shape
+    for y in range(small_h - 1):
+        for x in range(small_w - 1):
+            if not mask[y, x]:
+                continue
+            if mask[y, x + 1]:
+                s0 = small[y, x, 0]; s1 = small[y, x, 1]; s2 = small[y, x, 2]
+                t0 = small[y, x + 1, 0]; t1 = small[y, x + 1, 1]; t2 = small[y, x + 1, 2]
+                c0 = np.uint8(s0 + t0) // 2
+                c1 = np.uint8(s1 + t1) // 2
+                c2 = np.uint8(s2 + t2) // 2
+                for px in range(xs[x], xs[x + 1] + 1):
+                    result[ys[y], px, 0] = c0
+                    result[ys[y], px, 1] = c1
+                    result[ys[y], px, 2] = c2
+            if mask[y + 1, x]:
+                s0 = small[y, x, 0]; s1 = small[y, x, 1]; s2 = small[y, x, 2]
+                t0 = small[y + 1, x, 0]; t1 = small[y + 1, x, 1]; t2 = small[y + 1, x, 2]
+                c0 = np.uint8(s0 + t0) // 2
+                c1 = np.uint8(s1 + t1) // 2
+                c2 = np.uint8(s2 + t2) // 2
+                for py in range(ys[y], ys[y + 1] + 1):
+                    result[py, xs[x], 0] = c0
+                    result[py, xs[x], 1] = c1
+                    result[py, xs[x], 2] = c2
+
+
+@jit(nopython=True, cache=True, fastmath=True)
+def _draw_atoms_numba(result, cx, cy, radii, colors, bright_colors):
+    n = len(radii)
+    h, w = result.shape[:2]
+    for i in range(n):
+        r = radii[i]
+        cy_i = cy[i]
+        cx_i = cx[i]
+        y_start = cy_i - r
+        if y_start < 0:
+            y_start = 0
+        y_end = cy_i + r + 1
+        if y_end > h:
+            y_end = h
+        x_start = cx_i - r
+        if x_start < 0:
+            x_start = 0
+        x_end = cx_i + r + 1
+        if x_end > w:
+            x_end = w
+        rr = r * r
+        for y in range(y_start, y_end):
+            dy = y - cy_i
+            dy2 = dy * dy
+            for x in range(x_start, x_end):
+                dx = x - cx_i
+                if dy2 + dx * dx <= rr:
+                    result[y, x, 0] = colors[i, 0]
+                    result[y, x, 1] = colors[i, 1]
+                    result[y, x, 2] = colors[i, 2]
+        if r > 2:
+            for dy in range(-1, 2):
+                y = cy_i + dy
+                if y < 0 or y >= h:
+                    continue
+                for dx in range(-1, 2):
+                    x = cx_i + dx
+                    if 0 <= x < w:
+                        result[y, x, 0] = bright_colors[i, 0]
+                        result[y, x, 1] = bright_colors[i, 1]
+                        result[y, x, 2] = bright_colors[i, 2]
+
+
 def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
     h, w = img.shape[:2]
     small_h, small_w = int(h * atom_scale), int(w * atom_scale)
@@ -271,10 +343,7 @@ def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
     small = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_AREA)
     lab = cv2.cvtColor(small, cv2.COLOR_RGB2LAB)
     l, a, b = cv2.split(lab)
-    xx, yy = np.meshgrid(np.arange(small_w), np.arange(small_h))
     zz = l / 255.0 * small_h
-    positions = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
-    colors = small.reshape(-1, 3)
 
     grad_x = cv2.Sobel(l, cv2.CV_64F, 1, 0, ksize=3)
     grad_y = cv2.Sobel(l, cv2.CV_64F, 0, 1, ksize=3)
@@ -284,28 +353,18 @@ def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
     inv_scale = 1.0 / atom_scale
 
     mask = grad_mag > bond_threshold
-    xs = (np.arange(small_w) * inv_scale).astype(int)
-    ys = (np.arange(small_h) * inv_scale).astype(int)
+    xs = (np.arange(small_w) * inv_scale).astype(np.int32)
+    ys = (np.arange(small_h) * inv_scale).astype(np.int32)
 
-    # "Связи"
-    src = np.argwhere(mask[:small_h-1, :small_w-1])
-    for y, x in src:
-        if mask[y, x + 1]:
-            c = (small[y, x] + small[y, x + 1]) // 2
-            result[ys[y], xs[x]:xs[x + 1] + 1] = c
-        if mask[y + 1, x]:
-            c = (small[y, x] + small[y + 1, x]) // 2
-            result[ys[y]:ys[y + 1] + 1, xs[x]] = c
+    _draw_bonds_numba(result, mask, small, xs, ys)
 
-    # "Атомы"
-    radii = np.maximum(1, (3 * zz / small_h).astype(int))
-    cx = (positions[:, 0] * inv_scale).astype(int)
-    cy = (positions[:, 1] * inv_scale).astype(int)
-    for i in range(len(positions)):
-        r = radii.flat[i]
-        cv2.circle(result, (cx[i], cy[i]), int(r), colors[i].tolist(), -1)
-        if r > 2:
-            cv2.circle(result, (cx[i], cy[i]), max(1, int(r) // 3), [min(int(c) + 100, 255) for c in colors[i]], -1)
+    cx = (np.tile(np.arange(small_w), small_h) * inv_scale).astype(np.int32)
+    cy = (np.repeat(np.arange(small_h), small_w) * inv_scale).astype(np.int32)
+    colors = small.reshape(-1, 3)
+    radii = np.maximum(1, (3 * zz / small_h).astype(np.int32)).ravel()
+    bright_colors = np.minimum(colors.astype(np.int16) + 100, 255).astype(np.uint8)
+
+    _draw_atoms_numba(result, cx, cy, radii, colors, bright_colors)
     return result
 # endregion
 
