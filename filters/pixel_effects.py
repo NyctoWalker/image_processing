@@ -4,6 +4,15 @@ from numba import jit, prange
 import random
 import math
 
+# Precomputed LUT: result = cv2.addWeighted(a, 0.7, b, 0.3, 0) for all uint8 (a,b)
+_ADDWEIGHTED_LUT = np.empty((256, 256), dtype=np.uint8)
+_a_lut = np.arange(256, dtype=np.uint8).reshape(-1, 1)
+_b_lut = np.arange(256, dtype=np.uint8).reshape(1, -1)
+_ADDWEIGHTED_LUT[:] = cv2.addWeighted(
+    np.broadcast_to(_a_lut, (256, 256)), 0.7,
+    np.broadcast_to(_b_lut, (256, 256)), 0.3, 0
+)
+
 # region Near-pixelizing
 def apply_voxel_effect(img, block_size=8, height_scale=0.5, light_angle=45, ambient=0.3):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -42,9 +51,10 @@ def topographical_map(img, contour_levels=12, line_thickness=1, elevation_contra
 
     bins = np.linspace(0, 255, contour_levels + 1)
     quantized = np.digitize(adjusted, bins[1:-1]).astype(np.uint8)
+    adj_norm = adjusted / 255
 
     edges = np.zeros_like(quantized, dtype=np.uint8)
-    for level in np.unique(quantized):
+    for level in range(contour_levels):
         mask = (quantized == level).astype(np.uint8) * 255
         level_edges = cv2.Canny(mask, 50, 150)
         edges = cv2.bitwise_or(edges, level_edges)
@@ -56,21 +66,18 @@ def topographical_map(img, contour_levels=12, line_thickness=1, elevation_contra
 
         grad_x = cv2.Sobel(adjusted, cv2.CV_32F, 1, 0, ksize=5)
         grad_y = cv2.Sobel(adjusted, cv2.CV_32F, 0, 1, ksize=5)
-        slope = np.sqrt(grad_x**2 + grad_y**2)
 
         light_dir = np.array([-0.5, -0.7, 0.5])
-        normal = np.dstack((-grad_x, -grad_y, np.ones_like(grad_x)))
-        normal_norm = np.linalg.norm(normal, axis=2, keepdims=True)
-        normal /= np.where(normal_norm > 0, normal_norm, 1)
-        shading = np.dot(normal, light_dir)
+        nz = np.sqrt(grad_x**2 + grad_y**2 + 1)
+        shading = (-grad_x * light_dir[0] - grad_y * light_dir[1] + light_dir[2]) / nz
 
-        elevation_scale = 1 + (adjusted/255) * elevation_brightness_boost
-        valley_shadows = 1 - (1 - cv2.normalize(adjusted, None, 0, 1, cv2.NORM_MINMAX)) * elevation_brightness_boost
+        elevation_scale = 1 + adj_norm * elevation_brightness_boost
+        valley_shadows = 1 - (1 - adj_norm) * elevation_brightness_boost
         shading = shading * elevation_scale * valley_shadows
         shading = np.clip(shading, 0.3, 1.8)
 
         contour_mask = edges.astype(np.float32) / 255.0
-        contour_effect = contour_mask * line_brightness * (0.7 + 0.3*(adjusted/255))
+        contour_effect = contour_mask * line_brightness * (0.7 + 0.3 * adj_norm)
         shaded = img.astype(np.float32) * shading[..., None]
         result = shaded + (contour_effect[..., None] * 60)
         result = np.clip(result, 0, 255)
@@ -196,31 +203,42 @@ def apply_cubist_effect(img, fragment_size=50, distortion_strength=0.3):
 # endregion
 
 # region Oil and vector
+@jit(nopython=True, cache=True, fastmath=True)
+def _oil_numba(result, sobel_x, sobel_y, stride, scale, lut):
+    h, w = result.shape[:2]
+    scale_f = float(scale)
+    for _ in range(5):
+        for y in range(0, h, stride):
+            if y >= h - scale:
+                continue
+            sx_row = sobel_x[y]
+            sy_row = sobel_y[y]
+            for x in range(0, w, stride):
+                if x >= w - scale:
+                    continue
+                dx = sx_row[x]
+                dy = sy_row[x]
+                mag_sq = dx * dx + dy * dy
+                if mag_sq > 25.0:
+                    mag = mag_sq ** 0.5
+                    nx = dx / mag
+                    ny = dy / mag
+                    x2 = int(x + nx * scale_f)
+                    y2 = int(y + ny * scale_f)
+                    if 0 <= x2 < w - scale and 0 <= y2 < h - scale:
+                        for sy in range(scale):
+                            for sx in range(scale):
+                                result[y+sy, x+sx, 0] = lut[result[y+sy, x+sx, 0], result[y2+sy, x2+sx, 0]]
+                                result[y+sy, x+sx, 1] = lut[result[y+sy, x+sx, 1], result[y2+sy, x2+sx, 1]]
+                                result[y+sy, x+sx, 2] = lut[result[y+sy, x+sx, 2], result[y2+sy, x2+sx, 2]]
+
+
 def apply_oil(img, stride=15, scale=3):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=5)
     sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=5)
     result = img.copy()
-    h, w = gray.shape
-
-    for _ in range(5):
-        for y in range(0, h, stride):
-            for x in range(0, w, stride):
-                dx = sobel_x[y, x]
-                dy = sobel_y[y, x]
-                mag = np.sqrt(dx ** 2 + dy ** 2)
-
-                if mag > 5:
-                    nx, ny = dx / mag, dy / mag
-                    x2, y2 = int(x + nx * scale), int(y + ny * scale)
-                    if 0 <= x < w - scale and 0 <= y < h - scale and 0 <= x2 < w - scale and 0 <= y2 < h - scale:
-                        src_region = result[y:y + scale, x:x + scale]
-                        dst_region = result[y2:y2 + scale, x2:x2 + scale]
-                        if src_region.shape == dst_region.shape:
-                            result[y:y + scale, x:x + scale] = cv2.addWeighted(
-                                    src_region, 0.7,
-                                    dst_region, 0.3, 0
-                                )
+    _oil_numba(result, sobel_x, sobel_y, stride, scale, _ADDWEIGHTED_LUT)
     return cv2.medianBlur(result, 11)
 
 
@@ -253,7 +271,6 @@ def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
     small = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_AREA)
     lab = cv2.cvtColor(small, cv2.COLOR_RGB2LAB)
     l, a, b = cv2.split(lab)
-    # Псевдо-3Д
     xx, yy = np.meshgrid(np.arange(small_w), np.arange(small_h))
     zz = l / 255.0 * small_h
     positions = np.stack([xx, yy, zz], axis=-1).reshape(-1, 3)
@@ -264,24 +281,31 @@ def apply_molecular_effect(img, atom_scale=0.1, bond_threshold=30):
     grad_mag = np.sqrt(grad_x ** 2 + grad_y ** 2)
 
     result = np.full((h, w, 3), 40, dtype=np.uint8)
+    inv_scale = 1.0 / atom_scale
+
+    mask = grad_mag > bond_threshold
+    xs = (np.arange(small_w) * inv_scale).astype(int)
+    ys = (np.arange(small_h) * inv_scale).astype(int)
+
     # "Связи"
-    for y in range(small_h - 1):
-        for x in range(small_w - 1):
-            if grad_mag[y, x] > bond_threshold:
-                for dy, dx in [(0, 1), (1, 0)]:
-                    ny, nx = y + dy, x + dx
-                    if ny < small_h and nx < small_w and grad_mag[ny, nx] > bond_threshold:
-                        color = (small[y, x] + small[ny, nx]) // 2
-                        cv2.line(result,
-                                 (int(x / atom_scale), int(y / atom_scale)),
-                                 (int(nx / atom_scale), int(ny / atom_scale)),
-                                 color.tolist(), 1)
+    src = np.argwhere(mask[:small_h-1, :small_w-1])
+    for y, x in src:
+        if mask[y, x + 1]:
+            c = (small[y, x] + small[y, x + 1]) // 2
+            result[ys[y], xs[x]:xs[x + 1] + 1] = c
+        if mask[y + 1, x]:
+            c = (small[y, x] + small[y + 1, x]) // 2
+            result[ys[y]:ys[y + 1] + 1, xs[x]] = c
+
     # "Атомы"
-    for i, (x, y, z) in enumerate(positions):
-        radius = max(1, int(3 * z / small_h))
-        cv2.circle(result, (int(x / atom_scale), int(y / atom_scale)), radius, colors[i].tolist(), -1)
-        if radius > 2:
-            cv2.circle(result, (int(x / atom_scale), int(y / atom_scale)), max(1, radius // 3), [min(c + 100, 255) for c in colors[i]], -1)
+    radii = np.maximum(1, (3 * zz / small_h).astype(int))
+    cx = (positions[:, 0] * inv_scale).astype(int)
+    cy = (positions[:, 1] * inv_scale).astype(int)
+    for i in range(len(positions)):
+        r = radii.flat[i]
+        cv2.circle(result, (cx[i], cy[i]), int(r), colors[i].tolist(), -1)
+        if r > 2:
+            cv2.circle(result, (cx[i], cy[i]), max(1, int(r) // 3), [min(int(c) + 100, 255) for c in colors[i]], -1)
     return result
 # endregion
 
@@ -337,6 +361,21 @@ def pixelize_edge_preserving(img, pixel_size=8, edge_threshold=30):
     return cv2.resize(result, (w, h), interpolation=cv2.INTER_NEAREST)
 
 
+@jit(nopython=True, fastmath=True, cache=True)
+def _fs_dither(gray, dithered, dither_strength, h, w):
+    for y in range(h - 1):
+        for x in range(1, w - 1):
+            old_pixel = gray[y, x]
+            new_pixel = 255 if old_pixel > 127 else 0
+            dithered[y, x] = new_pixel
+            error = (float(old_pixel) - float(new_pixel)) * dither_strength
+            gray[y, x + 1] = np.uint8(gray[y, x + 1] + error * 7 / 16)
+            gray[y + 1, x - 1] = np.uint8(gray[y + 1, x - 1] + error * 3 / 16)
+            gray[y + 1, x] = np.uint8(gray[y + 1, x] + error * 5 / 16)
+            gray[y + 1, x + 1] = np.uint8(gray[y + 1, x + 1] + error * 1 / 16)
+    return dithered
+
+
 def pixelize_dither(img, pixel_size=8, dither_strength=0.5):
     """Floyd-Steinberg dithering"""
     h, w = img.shape[:2]
@@ -345,19 +384,8 @@ def pixelize_dither(img, pixel_size=8, dither_strength=0.5):
     small_img = cv2.resize(img, (small_w, small_h), interpolation=cv2.INTER_AREA)
 
     gray = cv2.cvtColor(small_img, cv2.COLOR_RGB2GRAY)
-
     dithered = np.zeros_like(gray)
-    for y in range(small_h - 1):
-        for x in range(1, small_w - 1):
-            old_pixel = gray[y, x]
-            new_pixel = 255 * (old_pixel > 127)
-            dithered[y, x] = new_pixel
-            error = (old_pixel - new_pixel) * dither_strength
-
-            gray[y, x + 1] += error * 7 / 16
-            gray[y + 1, x - 1] += error * 3 / 16
-            gray[y + 1, x] += error * 5 / 16
-            gray[y + 1, x + 1] += error * 1 / 16
+    _fs_dither(gray, dithered, dither_strength, small_h, small_w)
 
     mask = dithered[..., None] > 127
     result = np.where(mask, small_img, small_img * 0.7).astype(np.uint8)
