@@ -16,14 +16,7 @@ import os
 
 from dialogs import KernelDialog, PixelArtDialog
 from image_viewer import ImageViewer
-from filter_statics import apply_sepia, apply_hsb_adjustment, resize_image, pixelize_image, pixelize_kmeans, \
-    pixelize_edge_preserving, pixelize_dither, apply_grayscale, apply_posterize, apply_threshold, \
-    apply_bleach_bypass, apply_halftone, apply_chromatic_aberration, apply_canny_thresh, apply_ordered_dither, \
-    apply_crt_effect, apply_voxel_effect, apply_blur, apply_multitone_gradient, adjust_brightness_contrast, \
-    apply_duotone_gradient, apply_pencil_sketch, apply_stochastic_diffusion, apply_neon_diffusion, apply_distortion, \
-    apply_data_mosh, apply_kaleidoscope, ink_bleed_dither, cellular_dither, apply_hsb_force_adjustment, \
-    vector_field_flow, apply_oil, apply_ascii_overlay, apply_biological_vision, apply_molecular_effect, \
-    apply_lenticular_effect, apply_cubist_effect, topographical_map, apply_pinch_warp
+from filters import *
 
 FILTER_DEFINITIONS = {
     # region HSB/Color
@@ -618,24 +611,6 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
-    "Test": {
-        "has_params": True,
-        "default_params": {"t1": 25, "t2": 25, "t3": 25, "t4": 0},
-        "display_text": lambda p: f"Тест",
-        "dialog_sliders": [
-            {"label": "t1:", "key": "t1", "min": -200, "max": 200, "value_label": lambda v: str(v / 50)},
-            {"label": "t2:", "key": "t2", "min": 0, "max": 50, "value_label": lambda v: str(v / 50)},
-            {"label": "t3:", "key": "t3", "min": 0, "max": 50, "value_label": lambda v: str(v / 50)},
-            {"label": "t4:", "key": "t4", "min": -36, "max": 36, "value_label": lambda v: str(v)},
-        ],
-        "apply": lambda img, params: apply_pinch_warp(
-            img,
-            params.get("t1", 25) / 50,
-            params.get("t2", 25) / 50,
-            params.get("t3", 25) / 50,
-            params.get("t4", 0) * 5,
-        )
-    },
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -676,7 +651,6 @@ FILTER_DISPLAY_NAMES = {
     "Lenticular Lense": "Лентикулярная линза",
     "Gravi Lens": "Гравитационная линза",
     "Cubism": "Кубизм/Мозаика (тяжёлый)",
-    "Test": "Тест",
 }
 
 
