@@ -611,6 +611,114 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
+    # region New Artistic
+    "Kuwahara": {
+        "has_params": True,
+        "default_params": {"radius": 5, "generalized": 0},
+        "display_text": lambda p: f"Кувахара (радиус {p['radius']}{', обобщ.' if p['generalized'] else ''})",
+        "dialog_sliders": [
+            {"label": "Радиус:", "key": "radius", "min": 1, "max": 15, "value_label": lambda v: str(v)},
+            {"label": "Режим:", "key": "generalized", "min": 0, "max": 1,
+             "value_label": lambda v: ["Классический", "Обобщённый"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_kuwahara(
+            img,
+            params.get("radius", 5),
+            params.get("generalized", 0)
+        )
+    },
+    "Watercolor": {
+        "has_params": True,
+        "default_params": {"smooth": 10, "edge_darken": 3},
+        "display_text": lambda p: f"Акварель (гл.{p['smooth']}, кр.{p['edge_darken']})",
+        "dialog_sliders": [
+            {"label": "Сглаживание:", "key": "smooth", "min": 0, "max": 20, "value_label": lambda v: str(v)},
+            {"label": "Затемнение краёв:", "key": "edge_darken", "min": 0, "max": 10, "value_label": lambda v: str(v)},
+        ],
+        "apply": lambda img, params: apply_watercolor(
+            img,
+            params.get("smooth", 10),
+            params.get("edge_darken", 3)
+        )
+    },
+    "Film Emulation": {
+        "has_params": True,
+        "default_params": {"stock": 0, "intensity": 80, "brightness": 100},
+        "display_text": lambda p: f"Плёночные цвета ({['K64','F Velvia','Agfa U100','Pol 600','Superia','Lomo'][p['stock']]}, {p['intensity']}%)",
+        "dialog_sliders": [
+            {"label": "Тип плёнки:", "key": "stock", "min": 0, "max": 5, "step": 1,
+             "value_label": lambda v: ["Kodachrome 64", "Fuji Velvia 50", "Agfa Ultra 100",
+                                       "Polaroid 600", "Fuji Superia", "Lomo"][int(v)]},
+            {"label": "Интенсивность:", "key": "intensity", "min": 0, "max": 100, "step": 10, "value_label": lambda v: f"{v}%"},
+            {"label": "Яркость:", "key": "brightness", "min": 50, "max": 200, "step": 10, "value_label": lambda v: f"{v}%"},
+        ],
+        "apply": lambda img, params: apply_crossprocess(
+            img,
+            params.get("stock", 0),
+            params.get("intensity", 80),
+            params.get("brightness", 100)
+        )
+    },
+    "Fractal Plasma": {
+        "has_params": True,
+        "default_params": {"scale": 30, "octaves": 4, "amount": 50, "scheme": 0, "mode": 0},
+        "display_text": lambda p: f"Плазма (м-б {p['scale']}, окт {p['octaves']}, {p['amount']}%)",
+        "dialog_sliders": [
+            {"label": "Масштаб:", "key": "scale", "min": 5, "max": 100, "step": 5, "value_label": lambda v: str(v)},
+            {"label": "Октавы:", "key": "octaves", "min": 1, "max": 8, "value_label": lambda v: str(v)},
+            {"label": "Наложение:", "key": "amount", "min": 0, "max": 100, "step": 10, "value_label": lambda v: f"{v}%"},
+            {"label": "Цветовая схема:", "key": "scheme", "min": 0, "max": 5, "step": 1,
+             "value_label": lambda v: ["Огонь", "Лёд", "Золото", "Радуга", "Ч/Б", "Неон"][int(v)]},
+            {"label": "Режим смешивания:", "key": "mode", "min": 0, "max": 3, "step": 1,
+             "value_label": lambda v: ["Обычный", "Screen", "Overlay", "Soft Light"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_fractal_plasma(
+            img,
+            params.get("scale", 30),
+            params.get("octaves", 4),
+            params.get("amount", 50),
+            params.get("scheme", 0),
+            params.get("mode", 0)
+        )
+    },
+
+    "Orton Effect": {
+        "has_params": True,
+        "default_params": {"blur": 8, "glow": 50, "warmth": 0, "brightness": 110},
+        "display_text": lambda p: f"Ортон (бл.{p['blur']}, св.{p['glow']}%)",
+        "dialog_sliders": [
+            {"label": "Размытие:", "key": "blur", "min": 1, "max": 30, "value_label": lambda v: str(v)},
+            {"label": "Сила свечения:", "key": "glow", "min": 0, "max": 100, "step": 10, "value_label": lambda v: f"{v}%"},
+            {"label": "Теплота:", "key": "warmth", "min": -50, "max": 50, "step": 10, "value_label": lambda v: str(v)},
+            {"label": "Яркость:", "key": "brightness", "min": 50, "max": 200, "step": 10, "value_label": lambda v: f"{v}%"},
+        ],
+        "apply": lambda img, params: apply_orton_effect(
+            img,
+            params.get("blur", 8),
+            params.get("glow", 50),
+            params.get("warmth", 0),
+            params.get("brightness", 110)
+        )
+    },
+    "Vector Field": {
+        "has_params": True,
+        "default_params": {"style": 0, "scale": 15, "color_style": 0},
+        "display_text": lambda p: f"Векторное поле ({'HSV' if p['style']==0 else 'смещ'}, м-б {p['scale']})",
+        "dialog_sliders": [
+            {"label": "Стиль:", "key": "style", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["HSV-поле", "Смещение"][int(v)]},
+            {"label": "Масштаб:", "key": "scale", "min": 1, "max": 100, "step": 5, "value_label": lambda v: str(v)},
+            {"label": "Цветовая схема:", "key": "color_style", "min": 0, "max": 2, "step": 1,
+             "value_label": lambda v: ["Радуга", "Термальная", "Монохром"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_vector_field(
+            img,
+            params.get("style", 0),
+            params.get("scale", 15),
+            params.get("color_style", 0)
+        )
+    },
+    # endregion
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -651,6 +759,13 @@ FILTER_DISPLAY_NAMES = {
     "Lenticular Lense": "Лентикулярная линза",
     "Gravi Lens": "Гравитационная линза",
     "Cubism": "Кубизм/Мозаика (тяжёлый)",
+    "Kuwahara": "Фильтр Кувахары",
+    "Watercolor": "Акварель",
+
+    "Film Emulation": "Эмуляция плёнки",
+    "Fractal Plasma": "Фрактальная плазма",
+    "Orton Effect": "Эффект Ортона (свечение)",
+    "Vector Field": "Векторное поле",
 }
 
 
