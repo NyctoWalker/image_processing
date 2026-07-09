@@ -100,6 +100,25 @@ FILTER_DEFINITIONS = {
             params.get("intensity", 10) / 10,
         )
     },
+    "CLAHE": {
+        "has_params": True,
+        "default_params": {"clip_limit": 20, "detail": 5, "mode": 0},
+        "display_text": lambda p: f"Эквализация (сила {p['clip_limit']}%, дет.{p['detail']}, {['CLAHE','CDF'][p['mode']]})",
+        "dialog_sliders": [
+            {"label": "Сила контраста:", "key": "clip_limit", "min": 0, "max": 100, "step": 5,
+             "value_label": lambda v: f"{v}%"},
+            {"label": "Детализация:", "key": "detail", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Режим:", "key": "mode", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["CLAHE (локальная)", "Глобальная (CDF)"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_clahe(
+            img,
+            params.get("clip_limit", 20),
+            params.get("detail", 8),
+            params.get("mode", 0)
+        )
+    },
     # endregion
     # region Edges
     "Blur": {
@@ -491,6 +510,27 @@ FILTER_DEFINITIONS = {
             elevation_brightness_boost=params.get("contrast", 5) / 10
         )
     },
+    "Emboss": {
+        "has_params": True,
+        "default_params": {"intensity": 10, "direction": 0, "color": 0},
+        "display_text": lambda p: f"Эмбоссинг ({p['intensity']/10}, "
+                                   f"{['верх-лев','верх-прав','лев','прав'][p['direction']]}, "
+                                   f"{'цвет' if p['color'] else 'ч/б'})",
+        "dialog_sliders": [
+            {"label": "Интенсивность:", "key": "intensity", "min": 5, "max": 50, "step": 5,
+             "value_label": lambda v: str(v / 10)},
+            {"label": "Направление:", "key": "direction", "min": 0, "max": 3, "step": 1,
+             "value_label": lambda v: ["Верх-лево", "Верх-право", "Лево", "Право"][int(v)]},
+            {"label": "Режим:", "key": "color", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["Ч/Б", "Цветной"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_emboss(
+            img,
+            params.get("intensity", 10) / 10,
+            params.get("direction", 0),
+            params.get("color", 0)
+        )
+    },
     "Neon": {
         "has_params": True,
         "default_params": {"v1": 7, "v2": 5, "v3": 0, "v4": 0},
@@ -726,9 +766,11 @@ FILTER_DISPLAY_NAMES = {
     "HSB Set": "Установка значений HSB",
     "Brightness/Contrast": "Яркость/Контрастность",
     "Biological Vision": "Имитация зрения",
+    "CLAHE": "Эквализация гистограммы (CLAHE/CDF)",
     "Blur": "Размытие (Блюр)",
     "Edge Detection": "Детекция краёв",
     "Sketch": "Скетч/Карандаш",
+    "Emboss": "Эмбоссинг/Рельеф",
     "Custom Kernel": "Кастомное ядро",
     "Pixel Art": "Пиксель-арт",
     "Resize": "Изменение размера",
@@ -761,7 +803,6 @@ FILTER_DISPLAY_NAMES = {
     "Cubism": "Кубизм/Мозаика (тяжёлый)",
     "Kuwahara": "Фильтр Кувахары",
     "Watercolor": "Акварель",
-
     "Film Emulation": "Эмуляция плёнки",
     "Fractal Plasma": "Фрактальная плазма",
     "Orton Effect": "Эффект Ортона (свечение)",
