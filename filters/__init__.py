@@ -19,3 +19,10 @@ from filters.pixel_effects import apply_voxel_effect, topographical_map, \
     pixelize_image, pixelize_kmeans, pixelize_edge_preserving, pixelize_dither
 
 from filters.crt_glitch import apply_crt_effect
+
+from filters.artistic import apply_kuwahara, apply_watercolor, \
+    apply_crossprocess, apply_fractal_plasma, apply_orton_effect
+
+from filters.transforms import apply_vector_field
+
+from filters.additional import apply_emboss, apply_clahe

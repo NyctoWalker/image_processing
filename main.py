@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QListWidget, QFileDialog, QMessageBox,
     QInputDialog, QSlider, QDialog, QFormLayout, QDialogButtonBox,
-    QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox
+    QCheckBox, QToolBar, QListWidgetItem, QGroupBox, QLineEdit, QComboBox,
+    QScrollArea, QTreeWidget, QTreeWidgetItem, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent
 from PyQt6.QtGui import QAction, QImage
@@ -809,6 +810,18 @@ FILTER_DISPLAY_NAMES = {
     "Vector Field": "Векторное поле",
 }
 
+FILTER_CATEGORIES = {
+    "Цветокоррекция": ["HSB Adjustment", "HSB Set", "Brightness/Contrast", "Biological Vision", "CLAHE", "Film Emulation"],
+    "Края и контуры": ["Blur", "Edge Detection", "Sketch", "Kuwahara"],
+    "Базовые": ["Invert", "Sepia", "Grayscale", "Bleach"],
+    "Специальные": ["Custom Kernel", "Pixel Art", "Resize"],
+    "Палитры": ["Posterize", "Stepped Gradient", "Duotone Gradient", "ASCII"],
+    "Дизеринг": ["Threshold", "Bayer Dithering", "Dotted", "Stochastic Dithering", "Ink", "Cellular Dither"],
+    "Псевдо-3D": ["Emboss", "Voxelize Pixels", "Topographical"],
+    "Эффекты": ["Oil", "Molecular", "Chromatic Abberation", "CRT", "Neon", "Distortion", "Glitch", "Kaleidoscope", "Lenticular Lense", "Gravi Lens", "Cubism"],
+    "Артистичные": ["Watercolor", "Fractal Plasma", "Orton Effect", "Vector Field"],
+}
+
 
 class FilterDialog(QDialog):
     preview_requested = pyqtSignal(str, dict)
@@ -1063,15 +1076,34 @@ class FilterApp(QMainWindow):
         self.save_button.clicked.connect(self.save_image)
         left_panel.addWidget(self.save_button)
 
-        # Список доступных фильтров
-        self.available_filters = QListWidget()
-        for internal_name, display_name in FILTER_DISPLAY_NAMES.items():
-            item = QListWidgetItem(display_name)
-            item.setData(Qt.ItemDataRole.UserRole, internal_name)
-            self.available_filters.addItem(item)
-        self.available_filters.itemDoubleClicked.connect(self.add_filter)
+        # Список доступных фильтров по категориям
         left_panel.addWidget(QLabel("Доступные фильтры (двойной клик для добавления):"))
-        left_panel.addWidget(self.available_filters)
+
+        self.filter_tree = QTreeWidget()
+        self.filter_tree.setHeaderHidden(True)
+        self.filter_tree.setRootIsDecorated(True)
+        self.filter_tree.setAnimated(True)
+        self.filter_tree.setIndentation(16)
+        self.filter_tree.setFrameShape(QFrame.Shape.NoFrame)
+        self.filter_tree.itemDoubleClicked.connect(self.on_filter_tree_double_click)
+
+        for category_name, filter_names in FILTER_CATEGORIES.items():
+            cat_item = QTreeWidgetItem([category_name])
+            cat_item.setFlags(cat_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            font = cat_item.font(0)
+            font.setBold(True)
+            cat_item.setFont(0, font)
+            self.filter_tree.addTopLevelItem(cat_item)
+            cat_item.setExpanded(True)
+
+            for internal_name in filter_names:
+                display_name = FILTER_DISPLAY_NAMES.get(internal_name)
+                if display_name:
+                    child = QTreeWidgetItem([display_name])
+                    child.setData(0, Qt.ItemDataRole.UserRole, internal_name)
+                    cat_item.addChild(child)
+
+        left_panel.addWidget(self.filter_tree)
 
         # Список активных фильтров
         self.active_filters = QListWidget()
@@ -1433,8 +1465,13 @@ class FilterApp(QMainWindow):
 # endregion
 
 # region Filters CRUD
+    def on_filter_tree_double_click(self, item, column):
+        filter_name = item.data(0, Qt.ItemDataRole.UserRole)
+        if filter_name is not None:
+            self.add_filter(item)
+
     def add_filter(self, item):
-        filter_name = item.data(Qt.ItemDataRole.UserRole)
+        filter_name = item.data(0, Qt.ItemDataRole.UserRole)
         filter_def = FILTER_DEFINITIONS[filter_name]
 
         # Храним текущее превью
