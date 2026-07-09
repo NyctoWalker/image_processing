@@ -760,6 +760,88 @@ FILTER_DEFINITIONS = {
         )
     },
     # endregion
+    # region CNN Operations
+    "Conv2D": {
+        "has_params": True,
+        "default_params": {"kernel_type": 0, "kernel_size": 1, "stride": 1, "padding": 0, "dilation": 1},
+        "display_text": lambda p: f"Conv2D ({['Sharpen','Edge','Blur','Emboss','Identity','Sobel X','Sobel Y','Laplacian','Random'][p['kernel_type']]}, "
+                                   f"k{1+p['kernel_size']*2}, s{p['stride']}, d{p['dilation']})",
+        "dialog_sliders": [
+            {"label": "Тип ядра:", "key": "kernel_type", "min": 0, "max": 8, "step": 1,
+             "value_label": lambda v: ["Sharpen","Edge","Blur","Emboss","Identity","Sobel X","Sobel Y","Laplacian","Random"][int(v)]},
+            {"label": "Размер ядра:", "key": "kernel_size", "min": 0, "max": 4, "step": 1,
+             "value_label": lambda v: str(1 + v * 2)},
+            {"label": "Шаг (stride):", "key": "stride", "min": 1, "max": 4, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Расширение (dilation):", "key": "dilation", "min": 1, "max": 4, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Паддинг:", "key": "padding", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["Valid (0)","Same"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_conv2d(
+            img,
+            kernel_type=params.get("kernel_type", 0),
+            kernel_size=1 + params.get("kernel_size", 1) * 2,
+            stride=params.get("stride", 1),
+            padding=params.get("padding", 0),
+            dilation=params.get("dilation", 1)
+        )
+    },
+    "Pooling": {
+        "has_params": True,
+        "default_params": {"pool_type": 0, "kernel_size": 2, "stride": 2, "padding": 0},
+        "display_text": lambda p: f"Pooling ({['Max','Avg'][p['pool_type']]}, k{p['kernel_size']}, s{p['stride']})",
+        "dialog_sliders": [
+            {"label": "Тип:", "key": "pool_type", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["Max Pooling","Average Pooling"][int(v)]},
+            {"label": "Размер окна:", "key": "kernel_size", "min": 2, "max": 8, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Шаг (stride):", "key": "stride", "min": 1, "max": 8, "step": 1,
+             "value_label": lambda v: str(v)},
+            {"label": "Паддинг:", "key": "padding", "min": 0, "max": 1, "step": 1,
+             "value_label": lambda v: ["Valid (0)","Same"][int(v)]},
+        ],
+        "apply": lambda img, params: apply_pooling(
+            img,
+            kernel_size=params.get("kernel_size", 2),
+            stride=params.get("stride", 2),
+            pool_type=params.get("pool_type", 0),
+            padding=params.get("padding", 0)
+        )
+    },
+    "Normalize": {
+        "has_params": True,
+        "default_params": {"gamma": 10, "beta": 5, "eps": 0},
+        "display_text": lambda p: f"Нормализация (γ={p['gamma']/10:.1f}, β={p['beta']/10 - 0.5:.1f})",
+        "dialog_sliders": [
+            {"label": "Масштаб (γ):", "key": "gamma", "min": 1, "max": 30, "step": 1,
+             "value_label": lambda v: f"{v/10:.1f}"},
+            {"label": "Сдвиг (β):", "key": "beta", "min": 0, "max": 10, "step": 1,
+             "value_label": lambda v: f"{v/10 - 0.5:.1f}"},
+        ],
+        "apply": lambda img, params: apply_normalize(
+            img,
+            gamma=params.get("gamma", 10) / 10.0,
+            beta=params.get("beta", 5) / 10.0 - 0.5,
+        )
+    },
+    "Activation": {
+        "has_params": True,
+        "default_params": {"activation_type": 0, "alpha": 5},
+        "display_text": lambda p: f"Активация ({['ReLU','Leaky ReLU','TanH','Sigmoid','Hard Sigmoid','Swish/SiLU','GELU'][p['activation_type']]})",
+        "dialog_sliders": [
+            {"label": "Тип:", "key": "activation_type", "min": 0, "max": 6, "step": 1,
+             "value_label": lambda v: ["ReLU","Leaky ReLU","TanH","Sigmoid","Hard Sigmoid","Swish/SiLU","GELU"][int(v)]},
+            {"label": "Alpha (Leaky):", "key": "alpha", "min": 1, "max": 30, "step": 1,
+             "value_label": lambda v: f"{v/100:.2f}"},
+        ],
+        "apply": lambda img, params: apply_activation(
+            img,
+            activation_type=params.get("activation_type", 0),
+            alpha=params.get("alpha", 5) / 100.0,
+        )
+    },
+    # endregion
 }
 
 FILTER_DISPLAY_NAMES = {
@@ -808,6 +890,10 @@ FILTER_DISPLAY_NAMES = {
     "Fractal Plasma": "Фрактальная плазма",
     "Orton Effect": "Эффект Ортона (свечение)",
     "Vector Field": "Векторное поле",
+    "Conv2D": "Свёртка (Conv2D)",
+    "Pooling": "Пулинг (Pooling)",
+    "Normalize": "Нормализация (InstanceNorm)",
+    "Activation": "Функции активации",
 }
 
 FILTER_CATEGORIES = {
@@ -820,6 +906,7 @@ FILTER_CATEGORIES = {
     "Псевдо-3D": ["Emboss", "Voxelize Pixels", "Topographical"],
     "Эффекты": ["Oil", "Molecular", "Chromatic Abberation", "CRT", "Neon", "Distortion", "Glitch", "Kaleidoscope", "Lenticular Lense", "Gravi Lens", "Cubism"],
     "Артистичные": ["Watercolor", "Fractal Plasma", "Orton Effect", "Vector Field"],
+    "CNN-операции": ["Conv2D", "Pooling", "Normalize", "Activation"],
 }
 
 
@@ -1439,10 +1526,12 @@ class FilterApp(QMainWindow):
 
             qimg = qimg.convertToFormat(QImage.Format.Format_RGB888)
             ptr = qimg.bits()
-            ptr.setsize(qimg.height() * qimg.width() * 3)
-            arr = np.frombuffer(ptr, np.uint8).reshape((qimg.height(), qimg.width(), 3))
+            bpl = qimg.bytesPerLine()
+            ptr.setsize(qimg.height() * bpl)
+            full = np.frombuffer(ptr, np.uint8).reshape((qimg.height(), bpl))
+            arr = full[:, :qimg.width() * 3].reshape((qimg.height(), qimg.width(), 3)).copy()
 
-            self.image = arr.copy()
+            self.image = arr
             self.original_image = arr.copy()
 
             self.cache.clear()

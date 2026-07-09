@@ -26,3 +26,5 @@ from filters.artistic import apply_kuwahara, apply_watercolor, \
 from filters.transforms import apply_vector_field
 
 from filters.additional import apply_emboss, apply_clahe
+
+from filters.cnn_ops import apply_conv2d, apply_pooling, apply_transposed_conv2d, apply_normalize, apply_activation
